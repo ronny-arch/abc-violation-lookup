@@ -169,6 +169,10 @@ td.d{min-width:280px}
   padding:2px 6px;border-radius:4px;color:#fff}
 .cls.A{background:var(--calm)} .cls.B{background:var(--warn)}
 .cls.C{background:var(--crit)} .cls.I{background:var(--calm)}
+/* U = the City recorded no class. Deliberately NOT styled as A: a violation whose
+   severity is unknown must not read as the reassuring end of the scale. */
+.cls.U{background:transparent;color:var(--ink-soft);border:1px dashed var(--line)}
+.scope.locked{opacity:.6;pointer-events:none}
 .tag{display:inline-block;font-size:.68rem;font-weight:700;letter-spacing:.04em;padding:2px 7px;
   border-radius:99px;background:var(--fix);color:var(--brand-ink);margin-left:6px;white-space:nowrap}
 .muted{color:var(--ink-soft)}
@@ -186,7 +190,14 @@ ul.cands button{background:none;border:0;color:var(--brand);text-decoration:unde
 .src summary:hover{color:var(--brand)}
 .src p{margin:6px 0 0;max-width:70ch;line-height:1.55}
 
-/* ---- the named violations inside a ticked service row ------------------------------------- */
+/* ---- the named violations under a ticked service row --------------------------------------
+   A sibling of the .pick, not a child of it — see the comment at the emit site. These rules make
+   the two read as one block: the detail sits flush under the row it belongs to, sharing its left
+   inset, with the row's own bottom margin collapsed away. */
+.pick.on + .picked-detail{margin:-6px 0 10px;padding:0 13px 2px;border:1px solid var(--line);
+  border-top:0;border-radius:0 0 8px 8px;border-color:color-mix(in srgb,var(--brand) 45%,var(--line));
+  background:color-mix(in srgb,var(--brand) 8%,var(--surface))}
+.pick.on:has(+ .picked-detail){margin-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}
 .vlist{list-style:none;margin:10px 0 0 26px;padding:0;display:grid;gap:7px}
 .vit{display:flex;gap:9px;align-items:flex-start;background:var(--surface);
   border:1px solid var(--line);border-radius:6px;padding:8px 10px}
@@ -273,9 +284,10 @@ ul.cands button{background:none;border:0;color:var(--brand);text-decoration:unde
        so it folds away. Open by one click, still crawlable, still citable. -->
   <details class="src">
     <summary>Where these numbers come from</summary>
-    <p>Everything above is read live from the City's own public records — nothing is estimated and
-      nothing is stored about you. NYC Open Data: HPD violations (wvxf-dwi5), DOB violations
-      (3h2n-5cm9), ECB/OATH (6bgk-3dad), PLUTO (64uk-42ks), HPD registrations (tesw-yqqr).
+    <p>Every number on this page is read live from the City's own public records — nothing is
+      estimated, and nothing you type is stored. NYC Open Data: HPD violations (wvxf-dwi5), DOB violations
+      (3h2n-5cm9), ECB/OATH (6bgk-3dad), PLUTO (64uk-42ks), NYCHA violations (im9z-53hg),
+      Alternative Enforcement Program (hcir-3275), housing litigation (59kj-x8nc).
       Addresses resolved by NYC Planning Labs GeoSearch.</p>
   </details>
 </div>
@@ -367,6 +379,24 @@ const RULES = {
   pest: { label: 'Pests / vermin', weFix: false, pure: ['567'], never: [] }
 };
 const CLASS_MEANING = { A:'Non-hazardous', B:'Hazardous', C:'Immediately hazardous', I:'Informational' };
+
+/* The outage banner used to print the raw internal tokens straight at the visitor — a building
+   owner was shown "(hpd-both-empty)", which means nothing to them and looks like the page broke.
+   These are OUR names for OUR datasets; the customer gets the dataset's English name. Anything
+   unmapped falls through to the token rather than being hidden, so a new source added upstream
+   still surfaces here instead of silently reading as "no failures". */
+const SOURCE_LABEL = {
+  'hpd-counts':'HPD violation counts', 'hpd-detail':'the HPD violation list',
+  'hpd-both-empty':'HPD violations', 'dob':'DOB violations', 'ecb':'ECB/OATH violations',
+  'pluto':'the property record (PLUTO)', 'nycha':'NYCHA violations',
+  'aep':'the Alternative Enforcement Program list', 'litigation':'housing-litigation records',
+  'registration':'the HPD owner registration',
+};
+const sourceLabels = (list) => {
+  const seen=[], out=[];
+  for(const k of (list||[])){ const v=SOURCE_LABEL[k]||k; if(!seen.includes(v)){ seen.push(v); out.push(v); } }
+  return out.join(', ') || 'one or more City datasets';
+};
 
 /* Order number first, text second. NEVER text alone — searching descriptions for "MOLD"
    catches 707,790 "broken WOOD MOLDING" violations that have nothing to do with mold. */
@@ -1094,8 +1124,18 @@ async function lookup(raw,pre){
      one query and answer the other; it fails the burst. HPD registers roughly one building in
      three, so a lot that PLUTO says has residential units and that returns BOTH empty is not a
      clean building, it is a silent outage. */
+  /* ...BUT NYCHA IS THE EXPLAINED CASE, AND THIS FIRED ON EVERY NYCHA BUILDING.
+     Public-housing violations are not in wvxf-dwi5 at all — they live in the separate NYCHA
+     dataset this same lookup already reads and already renders. So on a NYCHA lot both HPD
+     queries answering 200 + [] is the CORRECT answer, not a silent outage, and the building was
+     being told "we could not reach every City dataset … this is not a clean bill of health.
+     Please try again in a moment" — forever, on data that was never coming. Verified against the
+     live dataset for BBL 3005570001: HTTP 200, count 0, while the NYCHA read returned 47 rows.
+     An outage guard that cannot distinguish "no data" from "no answer" is the empty-as-answer
+     class pointed back at us. */
   const _plutoUnits=Number((pluto[0]||{}).unitsres||0);
   if(countsOk && (counts||[]).length===0 && (vios||[]).length===0 && _plutoUnits>=3
+     && !(nycha||[]).length
      && !failed.includes('hpd-counts')) failed.push('hpd-both-empty');
 
   let exactTotal=0, exactOpen=0; const byClass={}, exactByCat={};
@@ -1165,6 +1205,41 @@ async function lookup(raw,pre){
       abcWork[k]={count:mergedByCat[k], label:spec.label, blurb:spec.blurb,
                   atLeast:mixedTruncated&&!!mixedByCat[k]};
 
+  /* ==========================================================================================
+   * DOB AND ECB VIOLATIONS — COUNTED SINCE DAY ONE, RENDERED NEVER.
+   *
+   * The headline promises "Every open HPD, DOB and ECB violation on the building" and the stat
+   * tiles print DOB-open and ECB-active counts. Nothing ever listed a single one of them. On a
+   * commercial or mixed-use lot — where DOB and ECB are most of the record — the page showed
+   * "41 DOB OPEN" directly above the sentence "No open HPD violations on this building right
+   * now", which reads as a clean bill of health beside a 41. A number with nothing behind it is
+   * worse than no number: the visitor cannot check it, and we invited them to.
+   *
+   * The open-filters are the SAME predicates the tiles already used, lifted here so the count
+   * and the list are computed once and cannot disagree. Capped, because a 4,000-row DOB history
+   * is not a sales page — the cap is stated on screen rather than silently applied.
+   * ========================================================================================== */
+  const _dobOpen = dob.filter(d=>!String(d.disposition_date||'').trim()
+                     && !String(d.violation_category||'').toUpperCase().includes('DISMISS'));
+  const _ecbOpen = ecb.filter(e=>String(e.ecb_violation_status||'').toUpperCase().startsWith('ACTIVE'));
+  /* YYYYMMDD is what both datasets ship. Anything that is not eight plausible digits is dropped
+     rather than rendered as "19881031" or reformatted into a date we cannot vouch for. */
+  const _ymd = v => { const s=String(v||'').trim();
+    if(!/^\d{8}$/.test(s)) return '';
+    const y=+s.slice(0,4); return (y>=1900 && y<=2100) ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : ''; };
+  const _clean = s => String(s||'').replace(/\s+/g,' ').trim();
+  const DETAIL_CAP = 40;
+  const _dobRows = _dobOpen.slice(0,DETAIL_CAP).map(d=>({
+    kind:'DOB', number:_clean(d.number)||_clean(d.violation_number),
+    type:_clean(d.violation_type)||_clean(d.violation_type_code),
+    description:_clean(d.description), issued:_ymd(d.issue_date),
+    status:_clean(d.violation_category)}));
+  const _ecbRows = _ecbOpen.slice(0,DETAIL_CAP).map(e=>({
+    kind:'ECB', number:_clean(e.ecb_violation_number),
+    type:_clean(e.violation_type), description:_clean(e.violation_description),
+    issued:_ymd(e.issue_date), status:_clean(e.hearing_status)||_clean(e.ecb_violation_status),
+    severity:_clean(e.severity)}));
+
   const p=pluto[0]||{};
   const yb=p.yearbuilt?parseInt(p.yearbuilt,10):null;
   const ur=p.unitsres?parseInt(p.unitsres,10):null;
@@ -1187,17 +1262,16 @@ async function lookup(raw,pre){
              complete:failed.length===0, sourcesFailed:failed.slice(),
              violationsShown:rows.length, violationsTruncated:rows.length<exactOpen,
              byClass,
-             dobOpen:dob.filter(d=>!String(d.disposition_date||'').trim()
-                        &&!String(d.violation_category||'').toUpperCase().includes('DISMISS')).length,
+             dobOpen:_dobOpen.length,
              dobTotal:dob.length,
-             ecbOpen:ecb.filter(e=>String(e.ecb_violation_status||'').toUpperCase().startsWith('ACTIVE')).length,
+             ecbOpen:_ecbOpen.length,
              ecbTotal:ecb.length,
              /* Anything not CLOSED is live — matches netlify/lookup.js and lookup.py exactly.
                 Counting only 'PENDING' would miss every other open status HPD uses. */
              openLitigations:(lit||[]).filter(l=>String(l.casestatus||'').toUpperCase()!=='CLOSED').length,
              inAEP:aep.length>0,
              nychaCount:nycha.length, isNycha:nycha.length>0},
-    nycha, abcWork, violations:rows};
+    nycha, abcWork, violations:rows, dobRows:_dobRows, ecbRows:_ecbRows};
 }
 
 /* ------------------------------------------------------------------ rendering */
@@ -1238,9 +1312,9 @@ const SERVICES = [
   /* ---- the three the classifier can actually count on a building --------------------------- */
   { key:'lead', match:'lead', group:'work', name:'Lead-based paint',
     we_do:'Abatement, containment and dust-wipe clearance — and we file the certification with HPD when the work is done.',
-    why_now:'Lead carries the shortest clocks HPD sets, and an uncertified correction leaves the violation open on the record even after the work is finished.' },
+    why_now:'Lead is written up as immediately hazardous, and an uncertified correction leaves the violation open on the record even after the work is finished.' },
   { key:'mold', match:'mold', group:'work', name:'Mold',
-    we_do:'Both licensed roles Article 32 requires — the assessor and the remediator — plus the clearance paperwork.',
+    we_do:'Both roles Article 32 requires — assessment and remediation — carried out through the licensed roles, plus the clearance paperwork.',
     why_now:'Missing the assessment is the usual reason a mold job fails at closeout, and re-inspection means paying for the work twice.' },
   { key:'remediation', match:'remediation', group:'work', name:'Cleaning / disinfection',
     we_do:'We carry out the remediation and document it for the file.',
@@ -1249,7 +1323,7 @@ const SERVICES = [
   /* ---- testing & inspection ---------------------------------------------------------------- */
   { key:'xrf', match:null, group:'test', name:'XRF lead testing',
     we_do:'A hand-held XRF reads lead straight through the paint layers, apartment by apartment, and nothing goes to a lab — you get the reading on the visit.',
-    why_now:'Paint in a pre-1960 building is presumed to be lead until somebody tests it, and a test is what turns a presumption into a fact you can act on.' },
+    why_now:'In a pre-1960 multiple dwelling the law can presume the paint is lead until somebody tests it, and a test is what turns a presumption into a fact you can act on.' },
   { key:'dustwipe', match:null, group:'test', name:'Dust-wipe clearance testing',
     we_do:'The wipe samples that prove a lead job is actually finished, taken and reported to the standard the clearance requires.',
     why_now:'A lead correction is not finished when the work stops — it is finished when it clears, and an uncleared job stays open on the record.' },
@@ -1262,7 +1336,7 @@ const SERVICES = [
 
   /* ---- the physical work ------------------------------------------------------------------- */
   { key:'asbestos', match:null, group:'work', name:'Asbestos',
-    we_do:'Licensed asbestos work — survey, abatement and air monitoring through the licensed roles the job requires.',
+    we_do:'Asbestos survey, abatement and air monitoring — carried out through the licensed roles the job requires.',
     why_now:'Asbestos is found during demolition and renovation, and finding it mid-job stops the job.' },
   { key:'repairs', match:null, group:'work', name:'The repairs behind the violations',
     we_do:'General construction — the plaster, paint, windows, doors and carpentry an inspector wrote up.',
@@ -1374,7 +1448,7 @@ function askPanels(r){
     const items=show.map(v=>{
       const d=(v.description||'').trim();
       return `<li class="vit">
-        <span class="cls ${esc(v.class||'A')}" title="${esc(CLASS_MEANING[v.class]||'')}">${esc(v.class||'?')}</span>
+        <span class="cls ${CLASS_MEANING[v.class]?esc(v.class):'U'}" title="${esc(CLASS_MEANING[v.class]||'Class not recorded by the City')}">${esc(v.class||'?')}</span>
         <span class="vtx"><b>${v.apartment?('Apt '+esc(v.apartment)):'Building-wide'}</b>${
           esc(d.slice(0,DESC_MAX))}${d.length>DESC_MAX?'…':''}${
           v.correctBy?`<i class="vby">City's correct-by date: ${esc(v.correctBy)}</i>`:''}</span>
@@ -1398,6 +1472,14 @@ function askPanels(r){
     const badge = n > 0
       ? `<span class="ct">${n}${info.atLeast?'+':''} found</span>`
       : `<span class="ct none">${svc.match?'none found':'ask us'}</span>`;
+    /* THE VIOLATION RECORDS GO OUTSIDE THE <label>, AND THIS IS NOT A STYLE PREFERENCE.
+       Anything inside a <label> that wraps a checkbox toggles that checkbox when clicked. The
+       records were emitted inside it, so reading them did the opposite of what the page is for:
+       every click on a violation — the apartment, the City's text, "…and 85 more" — silently
+       UNTICKED the trade the owner came to buy, and the change handler stripped the row's
+       highlight so it visually deselected too. (It was also an invalid content model: <ul> and
+       <p> are not allowed inside <label>.) Sibling element, visually joined by .picked-detail. */
+    const detail = on ? detailFor(svc,info) : '';
     const html=`<label class="pick${on?' on':''}">
         <span class="top">
           <input type="checkbox" name="want" value="${esc(svc.key)}"${on?' checked':''}>
@@ -1405,8 +1487,7 @@ function askPanels(r){
         </span>
         <span class="we">${esc(svc.we_do)}</span>
         ${svc.why_now?`<span class="wn">${esc(svc.why_now)}</span>`:''}
-        ${on?detailFor(svc,info):''}
-      </label>`;
+      </label>${detail?`<div class="picked-detail">${detail}</div>`:''}`;
     if(on) rows.push(html);
     else (extraByGroup[svc.group]=extraByGroup[svc.group]||[]).push(html);
   }
@@ -1487,7 +1568,7 @@ function askPanels(r){
         <div class="subhead" style="margin-top:0">Where do we send the proposal?</div>
         <ul class="promise">
           <li>A written scope for exactly what you ticked — not a phone estimate.</li>
-          <li>Back to you within one business day.</li>
+          <li>We come back to you quickly — usually the next business day.</li>
           <li>No charge, and no obligation to use us.</li>
         </ul>
         <div class="rowfields">
@@ -1562,12 +1643,19 @@ function wireAsk(){
            the confirmation email with the other addresses and we will add them to the same watch —
            we do not have their addresses yet, so nothing is watching them until you send them.</div>`);
       }
-      if(!res || res.ok!==false) wf.querySelector('.rowfields').style.display='none';
+      if(!res || res.ok!==false){
+        wf.querySelector('.rowfields').style.display='none';
+        /* Freeze the scope too. Leaving the radios live let somebody switch to "my whole
+           portfolio" AFTER submitting and be left looking at a confirmation for a scope
+           nothing was sent for — the worst kind of wrong, because it looks like it worked. */
+        wf.querySelectorAll('.scope input').forEach(rb=>{ rb.disabled=true; });
+        const sc=wf.querySelector('.scope'); if(sc) sc.classList.add('locked');
+      }
     }catch(err){
       said.innerHTML=`<div class="said bad"><b>That did not send</b>Nothing has been set up. Please
         try again in a moment, or email us and we will add the building by hand.</div>`;
       console.error(err);
-    }finally{ btn.disabled=false; btn.textContent='Watch this building'; }
+    }finally{ btn.disabled=false; btn.textContent='Start watching — free'; }
   });
 
   const qf=el('quotef');
@@ -1681,7 +1769,7 @@ function wireAsk(){
       said.innerHTML=`<div class="said bad"><b>That did not send</b>Nothing reached us. Please try
         again in a moment.</div>`;
       console.error(err);
-    }finally{ btn.disabled=false; btn.textContent='Send this to us'; }
+    }finally{ btn.disabled=false; btn.textContent='Send me the proposal'; }
   });
 }
 
@@ -1798,7 +1886,7 @@ function render(r,raw){
      contradiction check, both of which report by setting complete:false and nothing else. */
   if(s.complete===false) h+=`<div class="note" style="border-left-color:var(--warn,#c60)">
     <b>We could not reach every City dataset for this building</b>
-    (${esc((s.sourcesFailed||[]).join(', '))}). Anything below that depends on those sources is
+    (${esc(sourceLabels(s.sourcesFailed))}). Anything below that depends on those sources is
     incomplete — this is <b>not</b> a clean bill of health. Please try again in a moment.</div>`;
 
   if(r.violations.length){
@@ -1816,7 +1904,7 @@ function render(r,raw){
        backend already sorted most-recent-first); only the grouping changes. */
     const card=v=>`<article class="vcard${v.weFix?' fix':''}">
         <header>
-          <span class="cls ${esc(v.class||'A')}" title="${esc(CLASS_MEANING[v.class]||'')}">${esc(v.class||'?')}</span>
+          <span class="cls ${CLASS_MEANING[v.class]?esc(v.class):'U'}" title="${esc(CLASS_MEANING[v.class]||'Class not recorded by the City')}">${esc(v.class||'?')}</span>
           <span class="vapt">${v.apartment?('Apt '+esc(v.apartment)):'Building-wide'}</span>
           ${v.weFix?`<span class="tag">${esc(v.categoryLabel||v.category)} — we clear these</span>`:''}
         </header>
@@ -1853,6 +1941,36 @@ function render(r,raw){
         No open HPD violations on this building right now${s.hpdTotalEverRecorded?` (${s.hpdTotalEverRecorded} recorded historically)`:''}.</div>`;
     }
   }
+
+  /* THE DOB AND ECB RECORDS THE TILES HAVE ALWAYS COUNTED.
+     Rendered in their own section, and NOT folded into the HPD list — they are a different
+     agency, a different numbering scheme and a different process, and merging them would make
+     the HPD count on the tile above disagree with the rows under it. No dollar figures: the
+     penalty columns in this dataset are exactly the kind of number that is stale or misread
+     (see the feeamount trap), and a wrong balance on a sales page is not recoverable. */
+  const other=[].concat(r.dobRows||[], r.ecbRows||[]);
+  if(other.length){
+    const capped=(s.dobOpen>(r.dobRows||[]).length)||(s.ecbOpen>(r.ecbRows||[]).length);
+    h+=`<div class="vsec"><span>DOB &amp; ECB — the other agencies</span>
+          <i>${s.dobOpen||0} open DOB &middot; ${s.ecbOpen||0} active ECB/OATH${
+            capped?` &mdash; showing the first ${other.length}`:''}. Different agency, different
+            process from the HPD list above.</i></div>
+        <div class="vgrid">${other.map(v=>`<article class="vcard">
+            <header>
+              <span class="cls I" title="${esc(v.kind==='DOB'?'NYC Dept. of Buildings':'Environmental Control Board / OATH')}">${esc(v.kind)}</span>
+              <span class="vapt">${esc(v.type||'—')}</span>
+              ${v.severity?`<span class="vapt">${esc(v.severity)}</span>`:''}
+            </header>
+            <p class="vdesc">${esc((v.description||'').slice(0,300))}${
+              (v.description||'').length>300?'…':''}</p>
+            <footer>
+              <span>${esc(v.number||'—')}</span>
+              <span>Issued <b>${esc(v.issued||'—')}</b></span>
+              ${v.status?`<span>${esc(v.status)}</span>`:''}
+            </footer>
+          </article>`).join('')}</div>`;
+  }
+
   h+=`</div>`;
   h+=askPanels(r);
   out.innerHTML=h;
