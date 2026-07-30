@@ -1777,10 +1777,12 @@ document.getElementById('f').addEventListener('submit',async e=>{
 </html>
 
 <script>
-/* DEMO copy: this static test link has no back-end, so the plugin's "Watch this building"
-   monitoring panel is injected here so testers see the FULL feature set. */
+/* DEMO copy of the ABC lookup:
+   (1) the static test link has no back-end, so the plugin's "Watch this building" monitoring panel
+       is injected client-side so testers see the full feature set;
+   (2) Lead + Mold are surfaced as a flagged strip at the TOP of the results (VA request 2026-07-30). */
 (function(){
-  function inj(){
+  function injWatch(){
     var qp=document.getElementById('quotepanel');
     if(!qp||document.getElementById('watchpanel'))return;
     var a=((document.getElementById('q')||{}).value)||'this building';
@@ -1793,8 +1795,23 @@ document.getElementById('f').addEventListener('submit',async e=>{
       '<p class="fine">Free for up to five buildings. We send you a confirmation link first — nothing starts until you click it.</p>'+
       '<div id="dws" style="margin-top:12px"></div></form>';
     qp.parentNode.insertBefore(d,qp);
-    d.querySelector('#dwf').addEventListener('submit',function(e){e.preventDefault();document.getElementById('dws').innerHTML='<span style="color:#34d399">✓ On the live site this signs you up — you\'d get a confirmation email to click first.</span>';});
+    d.querySelector('#dwf').addEventListener('submit',function(e){e.preventDefault();document.getElementById('dws').innerHTML='<span style="color:var(--brand)">✓ On the live site this signs you up — you\'d get a confirmation email to click first.</span>';});
   }
-  try{new MutationObserver(inj).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}
+  function injTopFlags(){
+    var out=document.getElementById('out');
+    if(!out||document.getElementById('abcTopFlags'))return;
+    function cnt(rx){var els=out.querySelectorAll('*');for(var i=0;i<els.length;i++){var t=els[i].textContent||'';if(rx.test(t)&&/\d+\s*found/i.test(t)&&els[i].children.length<6){var m=t.match(/(\d+)\s*found/i);if(m)return m[1];}}return null;}
+    var lead=cnt(/lead-based paint/i), mold=cnt(/\bmold\b/i);
+    if(!lead&&!mold)return;
+    var s=document.createElement('div');s.id='abcTopFlags';
+    s.style.cssText='margin:14px 0;padding:14px 18px;border:1.5px solid var(--brand);border-radius:14px;background:rgba(46,168,138,.10);display:flex;gap:10px 18px;flex-wrap:wrap;align-items:center;font-size:15px';
+    var b=[];
+    if(lead)b.push('<span style="font-weight:800;color:var(--brand)">✓ Lead-based paint — '+lead+'</span>');
+    if(mold)b.push('<span style="font-weight:800;color:var(--brand)">✓ Mold — '+mold+'</span>');
+    s.innerHTML='<span style="font-weight:800">ABC can clear this building:</span>'+b.join('<span style="opacity:.45">·</span>');
+    var ref=out.firstChild?out.firstChild.nextSibling:null;
+    out.insertBefore(s,ref);
+  }
+  try{new MutationObserver(function(){injWatch();injTopFlags();}).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}
 })();
 </script>
