@@ -1775,3 +1775,26 @@ document.getElementById('f').addEventListener('submit',async e=>{
 </script>
 </body>
 </html>
+
+<script>
+/* DEMO copy: this static test link has no back-end, so the plugin's "Watch this building"
+   monitoring panel is injected here so testers see the FULL feature set. */
+(function(){
+  function inj(){
+    var qp=document.getElementById('quotepanel');
+    if(!qp||document.getElementById('watchpanel'))return;
+    var a=((document.getElementById('q')||{}).value)||'this building';
+    var d=document.createElement('div');d.className='panel';d.id='watchpanel';
+    d.innerHTML='<h3>Want us to watch this building?</h3>'+
+      '<p class="lede">The City records new violations against <b>'+a+'</b> without telling anyone. We check every day and email you when a new lead or mold violation lands — with the apartment, the class and the date it has to be corrected by. Nothing else, and you can stop with one click in any email.</p>'+
+      '<form id="dwf" novalidate><div class="rowfields">'+
+      '<input type="email" placeholder="you@example.com" aria-label="Your email">'+
+      '<button type="submit">Watch this building</button></div>'+
+      '<p class="fine">Free for up to five buildings. We send you a confirmation link first — nothing starts until you click it.</p>'+
+      '<div id="dws" style="margin-top:12px"></div></form>';
+    qp.parentNode.insertBefore(d,qp);
+    d.querySelector('#dwf').addEventListener('submit',function(e){e.preventDefault();document.getElementById('dws').innerHTML='<span style="color:#34d399">✓ On the live site this signs you up — you\'d get a confirmation email to click first.</span>';});
+  }
+  try{new MutationObserver(inj).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}
+})();
+</script>
