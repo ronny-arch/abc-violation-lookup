@@ -178,8 +178,11 @@ td.d{min-width:280px}
 .abc-brand{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
   background:#1c1e1a;border-radius:var(--radius);padding:12px 16px;margin:0 0 20px}
 .abc-logo{height:34px;width:auto;max-width:100%;display:block}
-.abc-tel{color:#fff;font-family:var(--display);font-weight:700;font-size:1.02rem;text-decoration:none;
-  white-space:nowrap}
+.abc-tel{color:#fff;font-family:var(--display);font-weight:800;font-size:1.18rem;text-decoration:none;
+  white-space:nowrap;letter-spacing:.01em;display:inline-flex;align-items:center;gap:7px}
+.abc-tel::before{content:"\260E";font-size:1.05rem;color:var(--brand)}
+.callus{color:var(--brand);font-weight:700;text-decoration:none}
+.callus:hover{text-decoration:underline}
 .abc-tel:hover{color:var(--brand)}
 .abc-foot{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);display:flex;
   flex-direction:column;gap:3px;font-size:.83rem;color:var(--ink-soft)}
@@ -1578,7 +1581,8 @@ function askPanels(r){
         </div>
         <label class="sr">Leave this empty<input type="text" id="whp" tabindex="-1" autocomplete="off"></label>
         <p class="fine">Free for up to five buildings. We send a confirmation link first — nothing
-          starts until you click it, and we never pass your address to anyone.</p>
+          starts until you click it, and we never pass your address to anyone.
+          Prefer to talk? <a class="callus" href="tel:+19295813300">Call (929) 581-3300</a>.</p>
         <div id="wsaid" style="margin-top:12px"></div>
       </form>
     </div>`;
@@ -1620,7 +1624,9 @@ function askPanels(r){
         <button type="submit" id="qgo">Send me the proposal</button>
         <p class="fine">We price a job after we have looked at the actual violations — a number
           produced by a web page about a building nobody has visited is not a number we would
-          stand behind, so you will get a real proposal rather than an instant quote.</p>
+          stand behind, so you will get a real proposal rather than an instant quote.<br>
+          In a hurry? <a class="callus" href="tel:+19295813300">Call (929) 581-3300</a> or email
+          <a class="callus" href="mailto:info@abcenv.com">info@abcenv.com</a>.</p>
       </div>
       <div id="qsaid" style="margin-top:12px"></div>
     </form>
