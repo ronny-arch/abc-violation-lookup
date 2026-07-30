@@ -1,0 +1,1777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ABC Environmental — NYC Building Violation Lookup</title>
+<!--
+  DROP-IN WIDGET. Two deployment modes, both supported by this one file.
+
+  MODE A — no backend at all.
+      Leave ABC_LOOKUP_ENDPOINT null. The browser calls NYC Open Data directly.
+      Verified 2026-07-28: both data.cityofnewyork.us and geosearch.planninglabs.nyc send
+      "Access-Control-Allow-Origin: *", so this works from any domain with zero server code.
+      Good enough for WordPress / Squarespace / Wix. Throttled by IP when keyless.
+
+  MODE B — recommended for real traffic.
+      Set ABC_LOOKUP_ENDPOINT to your deployed netlify/lookup.js. The app token then lives on
+      the server, you get caching and rate limiting, and no key is exposed in page source.
+
+  STYLING IS DELIBERATELY NEUTRAL. Every colour is a CSS variable at the top. ABC's actual
+  brand palette is Ronny's call to make with his designer, not something to invent here.
+  Restyle by editing :root only — no other CSS needs to change.
+
+  CLASSIFICATION IS MIRRORED FROM classification.json.
+  verify_no_drift.py EXECUTES this block against the same fixtures as the other two
+     implementations and fails if they disagree. (There is no verify_widget.py - an audit caught
+     this comment naming a file that has never existed.)
+-->
+<style>
+:root{
+  --bg:#ffffff; --surface:#f7f8f9; --line:#e2e5e9;
+  --ink:#14181d; --ink-soft:#5b646e;
+  --brand:#0f5c4a;              /* placeholder — replace with ABC's real colour */
+  --brand-ink:#ffffff;
+  --crit:#b4232a;               /* class C — immediately hazardous */
+  --warn:#a8620d;               /* class B — hazardous */
+  --calm:#6b7480;               /* class A — non-hazardous */
+  --fix:#0f5c4a;                /* the "we fix these" accent */
+  --radius:10px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#101317; --surface:#181c22; --line:#2a3038; --ink:#eef1f4; --ink-soft:#9aa4b0;
+         --crit:#ff6b71; --warn:#e0a049; --calm:#8b95a1; --brand:#2ea88a; --fix:#2ea88a;
+         --brand-ink:#06120e; }
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.5}
+.abc{max-width:880px;margin:0 auto;padding:24px 18px 64px}
+h1{font-size:1.5rem;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--ink-soft);margin:0 0 20px;font-size:.95rem}
+form{display:flex;gap:8px;flex-wrap:wrap;position:relative}
+.field{flex:1;min-width:240px;position:relative}
+input[type=text]{width:100%;padding:13px 14px;font-size:1rem;font-family:inherit;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--ink)}
+/* Typeahead. Picking a suggestion hands us the BBL directly, so the wrong-building
+   guess-work never happens at all — that is the real reason this exists. */
+.ac{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 6px 24px rgba(0,0,0,.14);max-height:288px;overflow-y:auto}
+.ac[hidden]{display:none}
+.ac li{list-style:none;padding:10px 14px;cursor:pointer;font-size:.93rem;
+  border-bottom:1px solid var(--line)}
+.ac li:last-child{border-bottom:0}
+.ac li[aria-selected=true],.ac li:hover{background:var(--surface)}
+.ac li b{font-weight:700}
+.ac ul{margin:0;padding:0}
+input[type=text]:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand)}
+button{padding:13px 22px;font-size:1rem;font-family:inherit;font-weight:600;cursor:pointer;
+  border:0;border-radius:var(--radius);background:var(--brand);color:var(--brand-ink)}
+button:disabled{opacity:.55;cursor:progress}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+  padding:18px;margin-top:18px}
+.addr{font-size:1.2rem;font-weight:650;margin:0 0 2px}
+.meta{color:var(--ink-soft);font-size:.85rem;margin:0}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.stat{flex:1 1 110px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font-size:1.45rem;font-variant-numeric:tabular-nums;line-height:1.15}
+.stat span{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+.c-crit b{color:var(--crit)} .c-warn b{color:var(--warn)} .c-calm b{color:var(--calm)}
+.wefix{border:2px solid var(--fix);border-radius:var(--radius);padding:14px 16px;margin-top:18px;
+  background:color-mix(in srgb,var(--fix) 8%,transparent)}
+.wefix h3{margin:0 0 8px;font-size:1rem;letter-spacing:.03em;text-transform:uppercase;color:var(--fix)}
+.wefix .line{display:flex;justify-content:space-between;gap:12px;padding:5px 0;flex-wrap:wrap}
+.wefix .line b{font-variant-numeric:tabular-nums}
+.note{border-left:3px solid var(--warn);padding:9px 13px;margin-top:14px;background:var(--bg);
+  font-size:.9rem;border-radius:0 6px 6px 0}
+
+/* ---- the ask panels: "watch this building" and "what do you want cleared" ---------------- */
+.panel{border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);
+  padding:18px;margin-top:18px}
+.panel.lead{border:2px solid var(--brand)}
+/* RESET THE INHERITED FLEX. `form{display:flex;flex-wrap:wrap}` was written for the ONE search box
+   at the top of the page, and it silently applied to these two forms as well — which turned every
+   heading and every tickable row into a flex item. "Also ask us about" ended up sitting BESIDE the
+   row it labels, and rows sized themselves to their text, so a short one was half the width of a
+   long one. It looked like a broken page. Only visible by rendering it. */
+.panel form{display:block}
+.panel h3{margin:0 0 4px;font-size:1.12rem;letter-spacing:-.01em}
+.panel .lede{color:var(--ink-soft);font-size:.9rem;margin:0 0 14px}
+.panel .lede b{color:var(--ink)}
+/* Rows are LABELS wrapping their own checkbox, so the whole row is a hit target — this gets
+   used on a phone, standing in a hallway, by someone who is not enjoying their day. */
+.pick{display:block;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:8px 0;
+  cursor:pointer;background:var(--surface)}
+.pick:hover{border-color:var(--brand)}
+.pick.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,var(--surface))}
+.pick .top{display:flex;align-items:baseline;gap:9px}
+.pick input{margin:0;width:17px;height:17px;accent-color:var(--brand);flex:none;
+  position:relative;top:2px}
+.pick .nm{font-weight:650;font-size:.97rem}
+.pick .ct{margin-left:auto;font-size:.75rem;font-weight:700;letter-spacing:.03em;white-space:nowrap;
+  background:var(--brand);color:var(--brand-ink);border-radius:99px;padding:2px 9px}
+.pick .ct.none{background:transparent;color:var(--ink-soft);font-weight:600}
+/* display:block is load-bearing, not tidiness. As inline spans these two ran together on one line
+   ("We carry out the remediation…  These sit open on the record…"), and margin-left applied only to
+   the FIRST line box — so every wrapped line jumped back to the left edge, under the checkbox,
+   losing the indent that makes the list scannable. Seen only by rendering it and looking. */
+.pick .we{display:block;font-size:.86rem;margin:6px 0 0 26px;color:var(--ink)}
+.pick .wn{display:block;font-size:.82rem;margin:4px 0 0 26px;color:var(--ink-soft)}
+.subhead{margin:16px 0 2px;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ink-soft);font-weight:700}
+.rowfields{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.rowfields > *{flex:1 1 190px;min-width:0}
+.panel input[type=text],.panel input[type=email],.panel input[type=tel],.panel textarea{
+  width:100%;padding:12px 13px;font-size:.97rem;font-family:inherit;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);color:var(--ink)}
+.panel textarea{margin-top:9px;min-height:74px;resize:vertical}
+.panel button{margin-top:12px;width:100%}
+@media(min-width:560px){.panel button{width:auto;min-width:260px}}
+.fine{font-size:.78rem;color:var(--ink-soft);margin:10px 0 0}
+.said{border-radius:8px;padding:13px 15px;font-size:.93rem;
+  background:color-mix(in srgb,var(--fix) 12%,var(--bg));border:1px solid var(--fix)}
+.said b{display:block;font-size:1rem;margin-bottom:3px}
+.said.bad{background:color-mix(in srgb,var(--crit) 10%,var(--bg));border-color:var(--crit)}
+/* Screen-reader-only, for the honeypot's label. Off-screen rather than display:none, because a
+   bot that skips hidden fields is exactly the bot this is meant to catch. */
+.sr{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.cta{display:inline-block;margin-top:14px;padding:12px 20px;background:var(--brand);
+  color:var(--brand-ink);text-decoration:none;border-radius:var(--radius);font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.87rem}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--ink-soft);border-bottom:1px solid var(--line);padding:7px 8px;white-space:nowrap}
+td{border-bottom:1px solid var(--line);padding:8px;vertical-align:top}
+td.d{min-width:280px}
+.cls{display:inline-block;min-width:20px;text-align:center;font-weight:700;font-size:.75rem;
+  padding:2px 6px;border-radius:4px;color:#fff}
+.cls.A{background:var(--calm)} .cls.B{background:var(--warn)}
+.cls.C{background:var(--crit)} .cls.I{background:var(--calm)}
+.tag{display:inline-block;font-size:.68rem;font-weight:700;letter-spacing:.04em;padding:2px 7px;
+  border-radius:99px;background:var(--fix);color:var(--brand-ink);margin-left:6px;white-space:nowrap}
+.muted{color:var(--ink-soft)}
+.err{border-left:3px solid var(--crit)}
+ul.cands{margin:8px 0 0;padding-left:18px}
+ul.cands li{margin:3px 0}
+ul.cands button{background:none;border:0;color:var(--brand);text-decoration:underline;
+  padding:0;font-size:.9rem;font-weight:500;cursor:pointer}
+.src{margin-top:22px;font-size:.75rem;color:var(--ink-soft)}
+@media (prefers-reduced-motion:no-preference){.card{animation:in .18s ease-out}}
+@keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="abc">
+  <h1>Check any NYC building for violations</h1>
+  <p class="sub">Live from New York City Open Data. Every open HPD, DOB and ECB violation on the
+    building — updated daily by the City.</p>
+
+  <form id="f" autocomplete="off">
+    <div class="field">
+      <input type="text" id="q" placeholder="Start typing an address…"
+             autocomplete="off" autocorrect="off" spellcheck="false"
+             aria-label="Building address" role="combobox" aria-expanded="false"
+             aria-autocomplete="list" aria-controls="ac">
+      <div class="ac" id="ac" hidden><ul role="listbox" aria-label="Address suggestions"></ul></div>
+    </div>
+    <button id="go" type="submit">Check building</button>
+  </form>
+
+  <div id="out" aria-live="polite"></div>
+
+  <p class="src">Sources: NYC Open Data — HPD violations (wvxf-dwi5), DOB violations (3h2n-5cm9),
+    ECB/OATH (6bgk-3dad), PLUTO (64uk-42ks), HPD registrations (tesw-yqqr); addresses via NYC
+    Planning Labs GeoSearch.</p>
+</div>
+
+<script>
+/* ------------------------------------------------------------------ configuration */
+
+// MODE B: set this to your deployed function, e.g. '/.netlify/functions/lookup'
+const ABC_LOOKUP_ENDPOINT = null;
+
+/* Where "Get a free quote" goes when this file is hosted with NO server behind it.
+ *
+ * NULL UNTIL SOMEBODY HAS OPENED IT IN A BROWSER AND SEEN A FORM. This was hardcoded to
+ * https://abcenv.com/intake, which does not exist — and neither does anything else on that domain,
+ * where every path including the homepage answers 404 with an empty body. A visitor who ticked the
+ * work they wanted and typed their name was sent there and landed on a blank error page.
+ *
+ * Leave it null and the ask panel says so honestly instead of pretending. Set it and the address,
+ * BBL and ticked services ride along so the form arrives pre-filled — never the personal details. */
+const ABC_INTAKE_URL = null;
+
+/* Shown only when there is no server and no intake page, so a visitor still has a way to reach
+ * somebody. NEVER invent these — a wrong number on a live page is worse than no number. */
+const ABC_PHONE = null;
+const ABC_EMAIL = null;
+
+/* ------------------------------------------------------------------ where the forms POST
+ * The two panels under a result — "watch this building" and "what do you want cleared" — need a
+ * server. Inside the WordPress plugin there is one; hosted as a bare file on Squarespace there is
+ * not, and the panels fall back to the intake link instead of pretending to submit.
+ *
+ * The base is resolved in three steps, most trustworthy first:
+ *   1. ?api= on this page's own URL. The plugin's shortcode puts rest_url() there, so no guessing
+ *      happens at all and it is right even when wp-content has been moved or renamed.
+ *   2. Sniffing /wp-content/plugins/ out of the path, for somebody who copied this file into
+ *      WordPress by hand without the plugin.
+ *   3. null — no server. The panels still render and still sell; the buttons become links.
+ *
+ * SAME ORIGIN IS ENFORCED ON STEP 1. Without that check, embedding this page as
+ * <iframe src=".../widget.html?api=https://evil.example/"> would post every visitor's name, email
+ * and phone number to a stranger, and the page would look completely normal while doing it. An
+ * attacker who can set the iframe src can already do plenty, but harvesting THROUGH our own form
+ * is not something we hand them. */
+const ABC_API_BASE = (function(){
+  if (typeof location === 'undefined') return null;
+  try {
+    var given = new URLSearchParams(location.search).get('api');
+    if (given) {
+      var u = new URL(given, location.href);
+      if (u.origin !== location.origin) return null;      // refuse, do not "fix"
+      return u.href.replace(/\/*$/, '/');
+    }
+  } catch (e) {}
+  try {
+    var m = String(location.pathname || '').match(/^(.*?)\/wp-content\/(?:plugins|mu-plugins)\//);
+    if (m) return location.origin + (m[1] || '') + '/wp-json/abc-vl/v1/';
+  } catch (e) {}
+  return null;
+})();
+
+// Socrata app token for MODE A. Verified working 2026-07-28 (HTTP 200 against wvxf-dwi5).
+//
+// THIS IS VISIBLE IN PAGE SOURCE, AND THAT IS FINE. A Socrata app token is a rate-limit
+// identifier, not a credential — it grants no write access and nothing private. It exists so
+// NYC can attribute traffic to an app instead of throttling everyone on one shared IP pool.
+// The SECRET token that Socrata issues alongside it is a real credential and must NEVER appear
+// here, in MODE B, or anywhere in this repository.
+//
+// In MODE B leave this empty and set NYC_APP_TOKEN as a server environment variable instead.
+const NYC_APP_TOKEN = 'QKyEzqUmzgFFb1fNFZS0ugiop';
+
+/* ------------------------------------------------------------------ classification
+   MIRRORED FROM classification.json. verify_widget.py fails if these drift apart.
+   Never edit here without editing there. */
+/* ---- SHARED-LOGIC-START ----  (verify_no_drift.py extracts this block and EXECUTES it
+   against the same fixtures as lookup.py and netlify/lookup.js. Do not remove the markers.) */
+const RULES = {
+  lead: {
+    label: 'Lead-based paint', weFix: true,
+    blurb: 'ABC Environmental holds the lead abatement licence. This is our core work.',
+    pure: ['555','610','611','612','614','616','617','618','619','620','621','622','623','624','625','626'],
+    never: ['556','557','558','559','560','856','857']
+  },
+  mold: {
+    label: 'Mold', weFix: true,
+    blurb: 'ABC Environmental remediates mold, including the licensed assessor and remediator roles.',
+    /* 510 is 27-2005 "abate the nuisance", NOT carpentry — it had been sitting in `never`
+       under a carpentry note that does not apply to it, hiding ~517 genuine open mold
+       violations (530 rows say MOLD; 13 of those really say MOLDING). */
+    pure: ['550'], mixed: ['510','553'], textConfirm: 'MOLD',
+    never: ['502','522','538','689']
+  },
+  remediation: {
+    label: 'Cleaning / disinfection', weFix: true,
+    blurb: 'ABC Environmental does this remediation work.',
+    pure: ['551'], never: []
+  },
+  pest: { label: 'Pests / vermin', weFix: false, pure: ['567'], never: [] }
+};
+const CLASS_MEANING = { A:'Non-hazardous', B:'Hazardous', C:'Immediately hazardous', I:'Informational' };
+
+/* Order number first, text second. NEVER text alone — searching descriptions for "MOLD"
+   catches 707,790 "broken WOOD MOLDING" violations that have nothing to do with mold. */
+/* WORD BOUNDARY, never a substring. "MOLDING" contains "MOLD", and HPD holds 707,790
+   broken-wood-molding violations — a bare includes() turns every baseboard repair in New York
+   into a mold violation. MOLD / MOLDS / MOLDY confirm; MOLDING does not. */
+function textConfirms(desc, tc){
+  const t = String(tc||'').toUpperCase();
+  if(!t) return false;
+  return new RegExp('\\b'+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(S|Y|ES)?\\b').test(desc);
+}
+function classify(v){
+  const order = String(v.ordernumber||'').trim();
+  const desc  = (v.novdescription||'').toUpperCase();
+  for (const [key,spec] of Object.entries(RULES)){
+    if ((spec.never||[]).includes(order)) continue;
+    if ((spec.pure||[]).includes(order)) return key;
+    if ((spec.mixed||[]).includes(order) && textConfirms(desc, spec.textConfirm)) return key;
+  }
+  return 'other';
+}
+
+/* HPD publishes impossible dates — the dataset's max approveddate is the year 9181. */
+function saneDate(v){
+  if(!v) return null;
+  const s = String(v).slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const y = +s.slice(0,4);
+  return (y<1900||y>2100) ? null : s;
+}
+/* ---- SHARED-LOGIC-END ---- */
+
+/* ------------------------------------------------------------------ transport */
+const SOC = 'https://data.cityofnewyork.us/resource';
+const sq  = s => String(s==null?'':s).replace(/'/g,"''");
+/* sq() escapes the quote; it does NOT escape % and _, which are LIKE WILDCARDS. A street typed
+   as "353 % Street" becomes the pattern '353 % STREET%' and matches every 353 in the borough,
+   after which `$order n DESC` hands back whichever building has the most violations. Not
+   injection — but user-controlled query breadth against an 11-million-row table, answered with
+   somebody else's building. */
+const like = s => sq(s).replace(/\\/g,'\\\\').replace(/%/g,'\\%').replace(/_/g,'\\_');
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+async function getJSON(url,{tries=3,retryIfEmpty=null,timeoutMs=12000,budgetMs=26000,minUsefulMs=3000}={}){
+  let delay=350, last='', started=Date.now();
+  for(let i=0;i<tries;i++){
+    /* Gate the next attempt on whether a USEFUL call still fits, and clamp it to the time
+       actually left — not on whether a full worst-case one does. The stricter test is how the
+       serverless twin's retry died a second time: with the budget it had, any first attempt
+       slower than 6s could never be followed by another, and the geocoder answers in 6-10s
+       routinely. Observed live: an empty at 8.6s, no retry, a real building called unresolved. */
+    const remaining = budgetMs - (Date.now()-started);
+    if(i>0 && remaining < minUsefulMs) break;
+    const callMs = Math.min(timeoutMs, Math.max(remaining, minUsefulMs));
+    try{
+      const h={Accept:'application/json'};
+      if(NYC_APP_TOKEN && url.includes('cityofnewyork')) h['X-App-Token']=NYC_APP_TOKEN;
+      /* HARD TIMEOUT. fetch() has NONE of its own. If the City accepts the connection and then
+         never answers — which is a different failure from an error or an empty — the await
+         never settles, every retry below is unreachable, and the visitor watches the spinner
+         forever with no message. The serverless twin has had a timeout since day one; this
+         file, the one that runs on abcenv.com with no backend, did not.
+         AbortController rather than AbortSignal.timeout: this is a public page and must work
+         on browsers older than 2022.
+         12s, NOT 8s. GeoSearch's own measured latencies are 8.4/16.2/6.8/7.2s, so a tighter
+         timeout aborts GOOD answers and manufactures the empty it then retries — the precise
+         bug the netlify twin shipped with. */
+      const ac=new AbortController();
+      const timer=setTimeout(()=>ac.abort(),callMs);
+      let r,t;
+      try{ r=await fetch(url,{headers:h,signal:ac.signal}); t=await r.text(); }
+      finally{ clearTimeout(timer); }
+      let d; try{ d=JSON.parse(t); }catch(e){ last='throttled/non-JSON'; await sleep(delay); delay*=2; continue; }
+      if(d && d.error) throw new Error(d.message||'API rejected the query');
+      /* An empty result is NOT an answer. NYC's geocoder returns 200 + zero features for
+         valid addresses, intermittently. Observed live on "353 Linden Street Brooklyn". */
+      if(retryIfEmpty && retryIfEmpty(d) && i<tries-1){ await sleep(delay); delay*=2; continue; }
+      return d;
+    }catch(e){
+      last = (e && e.name==='AbortError') ? ('no answer within '+callMs+'ms') : e.message;
+      await sleep(delay); delay*=2;
+    }
+  }
+  throw new Error(last||'no response');
+}
+/* Always an ARRAY of rows, or throw. Socrata can answer with a bare object under throttling;
+   iterating that yields string keys and every field read silently becomes undefined — which
+   would render as a CLEAN BUILDING. Caught once, here, for every caller. */
+const soc=async(res,p)=>{
+  const d=await getJSON(`${SOC}/${res}.json?${new URLSearchParams(p)}`);
+  if(Array.isArray(d)) return d;
+  throw new Error(`expected rows from ${res}, got ${typeof d}`);
+};
+
+/* Pages by `page` and stops at `cap`. It used to take cap positionally and then page by a
+   hardcoded 1000 regardless, so socAll(...,600) asked the City for 1000 rows and returned up to
+   1000 — while the serverless twin asked for 600 and returned 600. Same building, same code
+   path, 634 rows here against 374 there, and verify_no_drift.py has no pagination check at all,
+   so it printed "all green" over the divergence. */
+async function socAll(res,p,cap=3000,page=1000){
+  const step=Math.min(page,cap);
+  const out=[];
+  for(let off=0;off<cap;off+=step){
+    const b=await soc(res,{...p,$limit:String(Math.min(step,cap-off)),$offset:String(off)});
+    if(!Array.isArray(b)||!b.length) break;
+    out.push(...b);
+    if(b.length<step) break;
+  }
+  return out.slice(0,cap);
+}
+
+/* ------------------------------------------------------------------ resolution */
+const WORDNUM={one:'1',two:'2',three:'3',four:'4',five:'5',six:'6',seven:'7',eight:'8',nine:'9',ten:'10'};
+
+/* Hoisted out of parseRaw so the BOROUGH GUARD below reads the SAME map the parser writes.
+   A second private copy is how a guard quietly starts disagreeing with the thing it guards. */
+const BOROID={manhattan:'1',bronx:'2',brooklyn:'3',queens:'4','staten island':'5'};
+/* THE BBL'S FIRST DIGIT IS THE BOROUGH. That is what makes the borough guard free: every
+   dataset on this page joins on BBL, so every candidate already carries its own borough and
+   nothing extra has to be fetched to check it. */
+const BORO_FROM_BBL={1:'Manhattan',2:'Bronx',3:'Brooklyn',4:'Queens',5:'Staten Island'};
+/* PLUTO's borough column uses these abbreviations, NOT the BBL digit. Filtering PLUTO with '3'
+   instead of 'BK' matches nothing at all — silently, at HTTP 200. */
+const BOROCODE={manhattan:'MN',bronx:'BX',brooklyn:'BK',queens:'QN','staten island':'SI'};
+
+function parseRaw(raw){
+  /* A PASTE IS MULTI-LINE — `.` does not cross a newline and there is no /m flag, so an
+     address copied out of an email or a PDF was refused as incomplete with a message
+     telling the visitor to include what they had already included. */
+  /* Control characters stripped first — a NUL truncates a SoQL query at Socrata and returns
+     HTTP 200 with trailing conditions silently dropped. */
+  raw=String(raw==null?'':raw).replace(/[\x00-\x1f\x7f]/g,' ').replace(/\s+/g,' ').trim();
+  const t=String(raw||'').trim();
+  const zip=(t.match(/\b(\d{5})\b/)||[])[1]||null;
+  const parts=t.split(',').map(x=>x.trim());
+  /* BOROUGH IS READ ONLY FROM AFTER THE STREET — never from inside the street NAME. This used
+     to scan the whole string and take the first hit, so "150 MANHATTAN AVENUE, Brooklyn"
+     resolved to Manhattan and showed a DIFFERENT BOROUGH'S BUILDING: another named LLC, and
+     4 mold violations under "WE FIX THESE" that the visitor's building does not have. */
+  /* "After the street" means after the comma part that ACTUALLY held the street, not after the
+     first comma. They differ the moment somebody pastes unit-first:
+       "150 Manhattan Avenue, Brooklyn"         -> Brooklyn  (BBL 3030520008, 44 open)
+       "Apt 4B, 150 Manhattan Avenue, Brooklyn" -> MANHATTAN (BBL 1018420047, 35 open, and
+                                                   4 mold under "WE FIX THESE" that the real
+                                                   building does not have)
+     ambiguous:false, no alternates — nothing on the page hinted at it. */
+  let streetIdx = -1;
+  for (let i = 0; i < parts.length; i++) {
+    const h = parts[i].replace(/^\s*#\s*/, '').trim();
+    const mm = h.match(/^\s*(\d+(?:-\d+)?[A-Za-z]?)\s+(.+)$/);
+    if (mm && !/^(apt|apartment|unit|ste|suite|fl|floor|rm|room)\b/i.test(mm[2])) { streetIdx = i; break; }
+  }
+  let tail = (streetIdx>=0 ? parts.slice(streetIdx+1) : parts.slice(1)).join(' ').toLowerCase();
+  if(!tail){
+    const m2=t.match(/(manhattan|bronx|brooklyn|queens|staten island|bklyn|bk|si)\s*(?:,?\s*ny)?\s*(?:\d{5})?\s*$/i);
+    tail=m2?m2[1].toLowerCase():'';
+  }
+  let boro=Object.keys(BOROID).find(b=>tail.includes(b))||null;
+  if(!boro&&tail){
+    if(/\bbklyn\b|\bbk\b/.test(tail)) boro='brooklyn';
+    else if(/\bnyc\b/.test(tail)) boro='manhattan';
+    else if(/\bstaten\b|\bsi\b/.test(tail)) boro='staten island';
+  }
+  /* Try EVERY comma part — people paste unit-first ("Apt 4B, 353 Linden Street, Brooklyn"). */
+  let house=null, street=null;
+  for(const part of parts){
+    let head=part.replace(/^\s*#\s*/,'').trim();
+    const first=(head.split(' ')[0]||'').toLowerCase();
+    if(WORDNUM[first]) head=WORDNUM[first]+head.slice(first.length);
+    const m=head.match(/^\s*(\d+(?:-\d+)?[A-Za-z]?)\s+(.+)$/);
+    if(m&&!/^(apt|apartment|unit|ste|suite|fl|floor|rm|room)\b/i.test(m[2])){
+      house=m[1];
+      street=m[2].replace(/\s+(brooklyn|bronx|queens|manhattan|staten island).*$/i,'')
+                 .replace(/\s+(apt|apartment|unit|ste|suite|fl|floor|rm|room|#)\.?\s*[\w-]*$/i,'').trim();
+      break;
+    }
+  }
+  return {house, street, boro, boroid:boro?BOROID[boro]:null, zip};
+}
+
+const SUFFIX={ST:'STREET',AVE:'AVENUE',AV:'AVENUE',PL:'PLACE',BLVD:'BOULEVARD',PKWY:'PARKWAY',
+              PKY:'PARKWAY',RD:'ROAD',DR:'DRIVE',TER:'TERRACE',CT:'COURT',LN:'LANE'};
+const PREFIX={E:'EAST',W:'WEST',N:'NORTH',S:'SOUTH'};
+
+/* Normalise toward what the City STORES (the unabbreviated form), expanding a street-type
+   abbreviation ONLY in the LAST position, where it is a suffix. Expanding it anywhere turns
+   "ST MARKS AVENUE" into "STREET MARKS AVENUE" — and HPD holds 200,516 violations on streets
+   written "ST <name>". A leading "ST" is Saint, and HPD writes that "ST" too. */
+function normStreet(s){
+  const t=String(s||'').toUpperCase().replace(/[.,]/g,' ').split(/\s+/).filter(Boolean);
+  if(!t.length) return '';
+  if(SUFFIX[t[t.length-1]]) t[t.length-1]=SUFFIX[t[t.length-1]];
+  if(PREFIX[t[0]]) t[0]=PREFIX[t[0]];
+  return t.join(' ');
+}
+
+/* Spelled-out street numbers, because the City uses both forms freely: "Second Avenue" and
+   "2 AVENUE" are one street and a visitor may type either.
+   DISTINCT FROM WORDNUM above, which maps CARDINALS for HOUSE numbers ("One Hanson Place").
+   These are ORDINALS naming a street, and are only ever used to compare two spellings of one. */
+const STREETNUM={FIRST:'1',SECOND:'2',THIRD:'3',FOURTH:'4',FIFTH:'5',SIXTH:'6',SEVENTH:'7',
+                 EIGHTH:'8',NINTH:'9',TENTH:'10',ELEVENTH:'11',TWELFTH:'12'};
+
+/* A COMPARISON key for street names — never a lookup key.
+   It exists because the house number alone let "110 Columbia St, Brooklyn" resolve to
+   110 COLUMBIA HEIGHTS, a different Brooklyn street reported as "0 open violations" — a false
+   all-clear — once the borough guard had correctly kept it in Brooklyn. Number and borough both
+   matched; only the street differed, and nothing was checking it.
+   BOTH sides of every comparison get this exact transform, so normalising hard is safe: it can
+   only make two spellings of the SAME street agree, never two different streets. Ordinals
+   ("7th" -> "7", "223rd" -> "223") and spelled numbers ("Second" -> "2") are the forms the City
+   mixes. It does NOT fold "SAINT" into "ST" or strip apostrophes, and it does not need to:
+   GeoSearch returns EVERY alias of one address point, all carrying the same BBL, so the exact
+   spelling the visitor typed is among them. Verified live on 27A ST MARKS AVENUE (which comes
+   back as SAINT MARKS / ST MARK'S / ST MARKS / SAINT MARK'S, all BBL 3009330064) and on
+   178 ST JOHNS PLACE. Widening it further would start making DIFFERENT streets agree. */
+/* DIRECTIONALS, EXPANDED. The City writes them out, people abbreviate them, and the guard was
+   refusing correct matches on typography alone — "25 E MOSHOLU PARKWAY N" was thrown away even
+   though GeoSearch had resolved it to "25 EAST MOSHOLU PARKWAY NORTH" (174 open). This is a
+   COMPARISON key, so expanding can only make two spellings of one street agree. */
+const DIRECTIONAL={E:'EAST',W:'WEST',N:'NORTH',S:'SOUTH',
+                   NE:'NORTHEAST',NW:'NORTHWEST',SE:'SOUTHEAST',SW:'SOUTHWEST'};
+function streetKey(s){
+  return normStreet(s).split(' ')
+    .map(t=>t.replace(/^(\d+)(ST|ND|RD|TH)$/,'$1'))
+    .map(t=>STREETNUM[t]||t)
+    .map(t=>DIRECTIONAL[t]||t)
+    .filter(Boolean).join(' ');
+}
+
+/* A candidate's street, however that candidate was produced. GeoSearch supplies `street`
+   directly and so does PLUTO once parsed; the HPD index supplies `streetname`. Falling back to
+   the label means stripping the house number and the trailing ", Borough, NY, USA". */
+function candStreet(c){
+  if(c&&c.street) return String(c.street);
+  return String((c&&c.label)||'').split(',')[0].replace(/^\s*[\w-]+\s+/,'');
+}
+
+async function resolveGeosearch(raw){
+  /* FIVE tries. GeoSearch is not merely preferred, it is the authority on address→BBL: one
+     building routinely has several official addresses. BBL 3031380020 is "846 Flushing Avenue"
+     to the public, "13 Garden Street" to HPD, and "848 Flushing Avenue" to PLUTO — so matching
+     any dataset by address string fails. */
+  /* Retry on a FUZZY-ONLY answer as well as an empty one. The geocoder has two ways of saying
+     "I did not find it": zero features, or the neighbours without the building itself. Ask for
+     325 Cypress Avenue and an unlucky call returns 261/304/350 and no 325, while the next call
+     returns 325 first — a real building with 20 open violations, intermittently unfindable
+     (1 run in 5). If no attempt ever finds it, the house-number guard below still refuses and
+     offers the neighbours: we never show the wrong building, we just stop giving up early. */
+  const typedHouse=(parseRaw(raw).house||'').toUpperCase();
+  const wantsRetry=x=>{
+    const f=(x&&x.features)||[];
+    if(!f.length) return true;
+    if(!typedHouse) return false;
+    return !f.some(g=>String((g.properties||{}).housenumber||'').toUpperCase()===typedHouse);
+  };
+
+  /* BOTH GEOCODER ENDPOINTS CONCURRENTLY, not one endpoint five times over.
+     "846 Flushing Avenue, Brooklyn NY 11206" is findable ONLY through the geocoder's address
+     points — PLUTO files that lot as "848 FLUSHING AVENUE" and HPD as "13 GARDEN STREET", so
+     neither fallback below can rescue a bad reply — and /search is flaky per-request. Measured
+     live, six calls each: /search returned the exact house 4/6 (once the neighbours 929 and 943
+     Flushing, once nothing at all); /autocomplete returned it 6/6. Counterintuitive, since
+     autocomplete is meant to be the loose one, but it is what the data says, and the two fail
+     INDEPENDENTLY — so asking both is strictly better than asking either one twice, and costs
+     no extra wall-clock because they run side by side. */
+  const ask=u=>getJSON(u,{tries:3, retryIfEmpty:wantsRetry}).catch(()=>({features:[]}));
+  const pair=await Promise.all([
+    ask(`https://geosearch.planninglabs.nyc/v2/search?${new URLSearchParams({text:raw,size:'5'})}`),
+    ask(`https://geosearch.planninglabs.nyc/v2/autocomplete?${new URLSearchParams({text:raw})}`)]);
+
+  /* Prefer whichever reply actually contains the house number that was typed; otherwise merge
+     them, so a fuzzy set still feeds the "did you mean" list rather than being thrown away. */
+  const hasTyped=x=>((x&&x.features)||[]).some(
+    f=>String((f.properties||{}).housenumber||'').toUpperCase()===typedHouse);
+  let d=pair.find(x=>x&&hasTyped(x));
+  if(!d){
+    const seen=new Set(), merged=[];
+    for(const x of pair) for(const f of ((x&&x.features)||[])){
+      const k=String((((f.properties||{}).addendum||{}).pad||{}).bbl||Math.random());
+      if(seen.has(k)) continue;
+      seen.add(k); merged.push(f);
+    }
+    d={features:merged};
+  }
+
+  return (d.features||[]).map(f=>{
+    const p=f.properties||{}, pad=(p.addendum||{}).pad||{};
+    /* No BBL, no candidate. Every dataset below joins on it, and a guessed one is a real
+       building belonging to somebody else. */
+    if(!pad.bbl) return null;
+    return {bbl:String(pad.bbl), bin:pad.bin?String(pad.bin):null, label:p.label,
+            housenumber:p.housenumber, street:p.street,
+            borough:p.borough||BORO_FROM_BBL[String(pad.bbl)[0]],
+            matchType:p.match_type, source:'geosearch'};
+  }).filter(Boolean);
+}
+
+/* SECOND, independent resolver: match straight against HPD's own address columns, so one flaky
+   third-party geocoder cannot take the page down. It is a FALLBACK and never an override —
+   it prefix-matches, so it will happily offer a different building on a similarly-spelled
+   street, and it knows only buildings that ALREADY have HPD violations. */
+async function resolveHpdDirect(raw){
+  const p=parseRaw(raw);
+  if(!p.house||!p.street) return [];
+  /* BOTH spellings, for the same reason resolvePluto asks for both: HPD stores "7 AVENUE" while
+     the visitor types "7th Avenue", so a lone normStreet() LIKE of "7TH AVENUE%" matches
+     NOTHING. That leaves this fallback dead for every ordinal-numbered street in the city —
+     precisely when the geocoder has just failed and the fallback is all there is. Caught when
+     the acceptance list's "177 7th Avenue, Brooklyn" failed outright during a GeoSearch outage. */
+  const stVariants=[...new Set([normStreet(p.street),streetKey(p.street)])];
+  const where=[`housenumber='${sq(p.house)}'`,
+               '('+stVariants.map(v=>`upper(streetname) like '${like(v)}%'`).join(' OR ')+')'];
+  if(p.boro) where.push(`boroid='${BOROID[p.boro]}'`);
+  if(p.zip)  where.push(`zip='${sq(p.zip)}'`);
+  const rows=await soc('wvxf-dwi5',{
+    $select:'bbl, bin, housenumber, streetname, boro, zip, count(1) as n',
+    $where:where.join(' AND '),
+    $group:'bbl, bin, housenumber, streetname, boro, zip',
+    $order:'n DESC', $limit:'10'}).catch(()=>[]);
+  return (rows||[]).filter(r=>r.bbl).map(r=>({
+    bbl:String(r.bbl), bin:r.bin?String(r.bin):null,
+    label:`${r.housenumber} ${r.streetname}, ${(r.boro||'').trim()}, NY ${r.zip||''}`.trim(),
+    housenumber:r.housenumber, street:r.streetname,
+    borough:(r.boro||'').trim()||BORO_FROM_BBL[String(r.bbl)[0]],
+    source:'hpd-direct'}));
+}
+
+/* THIRD resolution source: PLUTO, the City's tax-lot record for every parcel in New York.
+   This is NOT redundancy. GeoSearch does not contain buildings that unquestionably exist, and
+   the gap falls hardest on exactly the buildings with the most violations. Reproduced live
+   2026-07-28:
+     "110 Columbia St, Brooklyn"
+       GeoSearch -> 110 COLUMBIA STREET **Manhattan** (BBL 1003230001), 110 COLUMBIA HEIGHTS
+                    Brooklyn, and 11/17/25 COLUMBIA STREET Brooklyn. It does NOT return the
+                    Brooklyn building at 110 Columbia Street at all.
+       PLUTO     -> BBL 3005380001, "110 COLUMBIA STREET", BK, NYC HOUSING AUTHORITY,
+                    1,836 residential units, built 1940. Red Hook East.
+   HPD's own address index cannot cover for it either: NYCHA violations are filed in a SEPARATE
+   dataset (im9z-53hg), so the building has no rows in wvxf-dwi5 to match against. Without
+   PLUTO every NYCHA development is unfindable — or, before the guards above, silently answered
+   with a different building's record. */
+async function resolvePluto(raw){
+  const p=parseRaw(raw);
+  if(!p.house||!p.street) return [];
+  /* PLUTO stores only ONE spelling of a numbered street per lot, so a single LIKE misses half
+     the city. Verified: Wagner Houses is filed as "2340 2 AVENUE" (BBL 1017970001, NYC HOUSING
+     AUTHORITY, 995 units) and a query for "2340 SECOND AVENUE" returns nothing whatsoever.
+     Ask for every spelling we know and OR them together. */
+  const hn=p.house.toUpperCase();
+  const variants=[...new Set([normStreet(p.street),streetKey(p.street)])].filter(Boolean);
+  /* An empty variant renders as `like '%'` — the whole dataset. See the input-gate note. */
+  if(!variants.length) return [];
+  const where=['('+variants.map(v=>`upper(address) like '${like(hn+' '+v)}%'`).join(' OR ')+')'];
+  /* PLUTO's own borough codes — see BOROCODE. The BBL digit does not work in this column. */
+  if(p.boro&&BOROCODE[p.boro]) where.push(`borough='${sq(BOROCODE[p.boro])}'`);
+
+  const rows=await soc('64uk-42ks',{
+    $select:'bbl, address, borough, ownername, unitsres, yearbuilt',
+    $where:where.join(' AND '), $order:'unitsres DESC', $limit:'10'}).catch(()=>[]);
+
+  return (rows||[]).map(r=>{
+    /* PLUTO ships the BBL as a FLOAT STRING — "3005380001.00000000". Joining any other dataset
+       on that value matches nothing, silently, at HTTP 200. Trim to the 10-digit key, and drop
+       anything that is not exactly 10 digits rather than passing a malformed id downstream. */
+    const bbl=String(r.bbl||'').split('.')[0].trim();
+    if(bbl.length!==10) return null;
+    const addr=String(r.address||'');
+    return {bbl, bin:null, label:`${addr}, ${BORO_FROM_BBL[bbl[0]]||r.borough}, NY`,
+            housenumber:(addr.match(/^\s*([\w-]+)/)||[])[1]||'',
+            street:addr.replace(/^\s*[\w-]+\s+/,''),
+            borough:BORO_FROM_BBL[bbl[0]]||r.borough,
+            ownerName:r.ownername||null,
+            unitsRes:r.unitsres!=null?Number(r.unitsres):null,
+            yearBuilt:r.yearbuilt!=null?Number(r.yearbuilt):null,
+            source:'pluto'};
+  }).filter(Boolean);
+}
+
+/* Every BIN sitting on a tax lot. DOB and ECB join on BIN and a lot is not one building, so
+   asking with a single BIN answers about one building and calls it the property. Building
+   Footprints is authoritative here and — unlike HPD — still knows the BINs of a building with
+   no violations at all, which is exactly the clean building whose DOB/ECB tiles must stay
+   truthful. Falls back to HPD's own bin column, then to whatever BIN the resolver carried. */
+async function binsForBbl(bbl, fallbackBin){
+  /* 500, NOT 200. BBL 2051410120 (Co-op City) has 250 building footprints, so a 200 cap
+     silently dropped 50 buildings' DOB and ECB rows — 366 DOB (19 open) and 224 ECB (4 active)
+     on that lot alone, which showed as "ECB active 4" instead of 8. netlify/lookup.js and
+     lookup.py were raised to 500; this file was missed. Four other lots also exceed 200. */
+  /* PAGINATE, DO NOT CAP. This was 200, then 500 — both were live undercounts, because BBL
+     4163500400 (Breezy Point) has 1,875 building footprints and 4163500300 has 539. Every DOB
+     and ECB number on the page derives from this list, so a cap here quietly shrinks four
+     totals at once: 217-02 Breezy Point Blvd read DOB 20/77 against a truth of 66/300. */
+  let rows = await socAll('5zhs-2jue',{$select:'bin',$where:`base_bbl='${sq(bbl)}'`},5000)
+    .catch(()=>[]);
+  const clean = rs => [...new Set((rs||[]).map(r=>String(r.bin||'').trim()))]
+    .filter(b=>b && b!=='0' && b!=='1000000');   /* 1000000 is the "unknown BIN" placeholder */
+  let bins = clean(rows);
+  if(!bins.length){
+    rows = await soc('wvxf-dwi5',{$select:'bin',$where:`bbl='${sq(bbl)}' AND bin IS NOT NULL`,
+                                  $group:'bin',$limit:'500'}).catch(()=>[]);
+    bins = clean(rows);
+  }
+  if(!bins.length && fallbackBin) bins = [String(fallbackBin)];
+  return bins;
+}
+
+/**
+ * WHERE-clause for HPD violations on a tax lot. NOT just bbl='...'.
+ *
+ * HPD does not put a BBL on every row. 3,368 OPEN violations across 307 lots have the field
+ * ABSENT entirely (Socrata omits nulls), while carrying boroid/block/lot correctly. Joining on
+ * bbl alone therefore returns a literal, deterministic FALSE ALL-CLEAR under the building's own
+ * correct address, with nothing on the page for a reader to catch. Measured live:
+ *
+ *     BBL 2029670006 (1549 SEABURY PLACE, Bronx)
+ *       bbl='2029670006'                      -> 0        <- what shipped
+ *       boroid='2' AND block='2967' AND lot='6' -> 477 OPEN, 77 closed
+ *
+ * BBL is boro + 5-digit block + 4-digit lot BY CONSTRUCTION, so the OR cannot reach a
+ * neighbouring lot. block and lot are stored UNPADDED, hence the parseInt - '02967' matches
+ * nothing. Verified unchanged on a control: 353 Linden reports 175 both ways.
+ */
+function hpdLotWhere(bbl) {
+  const b = String(bbl || '');
+  if (b.length !== 10) return `bbl='${sq(b)}'`;
+  const boro = b.slice(0, 1);
+  const block = String(parseInt(b.slice(1, 6), 10));
+  const lot = String(parseInt(b.slice(6, 10), 10));
+  return `(bbl='${sq(b)}' OR (boroid='${sq(boro)}' AND block='${sq(block)}' AND lot='${sq(lot)}'))`;
+}
+
+async function resolve(raw){
+  /* INPUT GATE. Found by hostile-input QA: without it the geocoder confidently answers
+     nonsense — "Linden Street" returned an arbitrary 49 LINDEN STREET, "11237" was read as a
+     house number and returned 11237 38 AVENUE. The house-number guard below cannot catch those,
+     because there is no typed house number to compare against. */
+  const pre=parseRaw(raw);
+  /* A street that NORMALISES TO NOTHING is not a street, however truthy the raw text is.
+     "353 ." parsed to street "." -> normStreet dropped it -> `like '%'` matched all 11.1M HPD
+     rows, and the top-ranked one came back as a confident ok:true report for a building nobody
+     typed. Bare "353" was already refused; one period defeated the whole guard. */
+  if(!pre.house||!pre.street||!streetKey(pre.street)) return {ok:false,error:'incomplete_address',
+    message:'Please include both the building number and the street — for example '+
+            '"353 Linden Street, Brooklyn".'};
+
+  /* All three in parallel: the geocoder sets the pace at 6-16s, PLUTO and HPD answer in ~0.3s,
+     so the extra coverage is free. */
+  let [geo,direct,pluto]=await Promise.all([
+    resolveGeosearch(raw), resolveHpdDirect(raw), resolvePluto(raw)]);
+
+  /* ---- BOROUGH GUARD ---------------------------------------------------------------------
+     THE HOUSE NUMBER ALONE IS NOT A WRONG-BUILDING CONTROL. It only ever compared the number,
+     so any address whose number also exists on a same-named or similar street in another
+     borough sailed straight through unflagged. Both of these were live and reproduced:
+
+       "110 Columbia St, Brooklyn"     -> 110 COLUMBIA STREET, MANHATTAN (BBL 1003230001).
+                                          Red Hook East is BBL 3005380001. Another owner's data.
+       "2340 Second Avenue, Manhattan" -> 2340 EAST SECOND STREET, BROOKLYN, "0 open
+                                          violations". Wagner Houses (BBL 1017970001) carries
+                                          121 NYCHA violations. A FALSE ALL-CLEAR, which is the
+                                          worst thing this page can say.
+
+     The BBL's first digit IS the borough, so when the visitor told us the borough we simply
+     refuse to leave it. Prefer candidates inside it; if there are none anywhere, refuse rather
+     than answer about a different borough's building. */
+  const wantDigit=pre.boroid;
+  if(wantDigit){
+    const inBoro=a=>a.filter(c=>String(c.bbl||'')[0]===wantDigit);
+    const g2=inBoro(geo), d2=inBoro(direct), p2=inBoro(pluto);
+    if(g2.length||d2.length||p2.length){
+      geo=g2; direct=d2; pluto=p2;          // the right-borough building, not merely a rejection
+    } else if(geo.length||direct.length||pluto.length){
+      return {ok:false, error:'wrong_borough',
+        typedBorough:BORO_FROM_BBL[wantDigit],
+        foundInstead:[...geo,...direct,...pluto].slice(0,3)
+          .map(c=>`${c.label||c.bbl} (${BORO_FROM_BBL[String(c.bbl)[0]]||'?'})`),
+        message:`We could not find that address in ${BORO_FROM_BBL[wantDigit]}. The City's `+
+          `address service matched it to a different borough instead, and we are not going to `+
+          `show you another borough's building. Check the street name and borough and try `+
+          `again — this is not a result for your building.`};
+    }
+  }
+
+  /* ---- STREET GUARD ----------------------------------------------------------------------
+     The borough guard alone is not enough. With it in place "110 Columbia St, Brooklyn"
+     correctly stayed in Brooklyn and then picked 110 COLUMBIA HEIGHTS — house number 110,
+     borough Brooklyn, and "0 open violations" reported for a street the visitor never typed.
+     Prefer candidates on the street actually asked for; refuse if there are none. */
+  const typedStreetKey=streetKey(pre.street);
+  if(typedStreetKey){
+    const onStreet=a=>a.filter(c=>streetKey(candStreet(c))===typedStreetKey);
+    const g3=onStreet(geo), d3=onStreet(direct), p3=onStreet(pluto);
+    if(g3.length||d3.length||p3.length){
+      geo=g3; direct=d3; pluto=p3;
+    } else if(geo.length||direct.length||pluto.length){
+      return {ok:false, error:'no_exact_match', typed:pre.street,
+        candidates:[...geo,...direct,...pluto].slice(0,5).map(c=>({label:c.label,bbl:c.bbl})),
+        message:'We could not find that street at that number. We are not going to show you a '+
+                'different building’s violations.'};
+    }
+  }
+
+  /* PLUTO WINS WHEN IT HOLDS THE EXACT ADDRESS.
+     The geocoder can return the RIGHT address attached to the WRONG LOT, and when it does every
+     guard above passes - house and street match what was typed. Reproduced live on correctly
+     typed addresses:
+       "766 Blake Avenue, Brooklyn"     geo -> 3037930001, 0 open, 0 NYCHA, note:null
+                                        PLUTO -> 3037770001, NYC HOUSING AUTHORITY, 525 units
+       "107 East 130 Street, Manhattan" geo -> 1017790001, a GARAGE, 0 open
+                                        PLUTO -> 1017790007, 179-unit HDFC, 174 open
+     Do NOT reach for layer/match_type to detect this: GeoSearch reports layer='venue' and
+     match_type='fallback' on EVERY hit, including the correct ones. They carry no signal.
+     When PLUTO has no exact row the geocoder still wins - which is what keeps 846 Flushing
+     Avenue working, since PLUTO files that lot as "848 FLUSHING AVENUE". */
+  const typedHouseKey = String(parseRaw(raw).house||'').toUpperCase();
+  const plutoExact = pluto.find(c => String(c.housenumber||'').toUpperCase() === typedHouseKey);
+  let chosen=null, note=null;
+  if(plutoExact){
+    const geoBbl = geo.length ? String(geo[0].bbl) : null;
+    /* "PLUTO HOLDS THIS ADDRESS" IS NOT "PLUTO HOLDS THIS BUILDING". PLUTO carries slivers,
+       garages, school lots, vacant lots and condo billing lots that duplicate the address of the
+       real building beside them. "735 Lincoln Avenue, Brooklyn" resolved to a class-Z9 lot with
+       ZERO buildings and reported 0 open; the real lot has 5,584. The discriminator is BUILDING
+       FOOTPRINTS: the good cases this rule exists for (766 Blake, 107 E 130, 373 Mother Gaston)
+       all have MORE buildings on PLUTO's lot than the geocoder's; the failures have fewer.
+       A lot with no buildings on it cannot be the building somebody asked about. */
+    let plutoWins=true;
+    if(geoBbl && geoBbl !== plutoExact.bbl){
+      const [pBins,gBins]=await Promise.all([
+        binsForBbl(plutoExact.bbl).catch(()=>null), binsForBbl(geoBbl).catch(()=>null)]);
+      /* Only overrule on a reading we got — a failed lookup must not silently pick another lot. */
+      if(pBins&&gBins&&pBins.length<gBins.length){
+        plutoWins=false;
+        note='PLUTO holds this exact address on lot '+plutoExact.bbl+', but that lot has '+
+             pBins.length+' building(s) on it and the geocoder\'s lot has '+gBins.length+
+             '; using the geocoder\'s';
+      }
+    }
+    if(plutoWins){
+      chosen = plutoExact;
+      if(geoBbl && geoBbl !== plutoExact.bbl)
+        note='the geocoder pointed at a different tax lot ('+geoBbl+'); using PLUTO\'s, which holds this exact address';
+    }
+  }
+  if(!chosen && geo.length){
+    /* GEOSEARCH WINS whenever it still has a candidate. It is authoritative for address→BBL;
+       the other two are prefix matchers over address TEXT and must never overrule it. */
+    chosen=geo[0];
+  } else if(pluto.length){
+    /* PLUTO BEFORE the HPD index: PLUTO covers every lot in the city, whereas the HPD index
+       knows only buildings that already have HPD violations — so it cannot find a NYCHA
+       development at all, those file into im9z-53hg. Ordering these the other way round is
+       how 110 Columbia Street stays unfindable. */
+    chosen=pluto[0];
+    note='The geocoder did not return this address; resolved from PLUTO, the City’s tax-lot record.';
+  } else if(direct.length){
+    chosen=direct[0];
+    note='The geocoder returned nothing; resolved from HPD’s own address index instead.';
+  }
+
+  /* "We could not look it up" is NOT "this building is clean". Conflating them tells an owner
+     with 40 open violations that they have none — the most damaging thing this page could say. */
+  if(!chosen) return {ok:false,error:'unresolved',
+    message:'We could not look up that address just now. Check the street name and borough and '+
+            'try again — this is not a result for your building, it means the City’s address '+
+            'service did not answer.'};
+
+  /* ---- HOUSE-NUMBER GUARD ----------------------------------------------------------------
+     A wrong building is worse than no building. Caught in live testing: "325 Cypress Avenue,
+     Bronx NY 10454" resolved to 261 CYPRESS AVENUE and would have shown that building's
+     violations. 325 Cypress is a real, separate lot (BBL 2025540001) with 20 open violations of
+     its own. GeoSearch had flagged its own guess match_type:"fallback" — we were not reading it.
+     THE POOL MUST INCLUDE PLUTO. Both NYCHA cases above end here, not earlier: for
+     "2340 Second Avenue, Manhattan" the geocoder returns 231/253/263/273/275 SECOND AVENUE,
+     all genuinely in Manhattan and all on the right street, so only the number is wrong — and
+     the exact match for 2340 exists nowhere but PLUTO. */
+  const typed=(pre.house||'').toUpperCase();
+  const got=String(chosen.housenumber||'').toUpperCase();
+  if(typed && got && typed!==got){
+    const pool=[...geo,...direct,...pluto];
+    const exact=pool.find(c=>String(c.housenumber||'').toUpperCase()===typed);
+    if(exact){
+      chosen=exact;   // an exact match existed further down — use it, don't take the top hit
+      note='The geocoder ranked a different building first; corrected to the exact house-number match.';
+    } else {
+      const seen=new Set();
+      return {ok:false, error:'no_exact_match', typed,
+        candidates:pool.filter(c=>!seen.has(c.bbl)&&seen.add(c.bbl)).slice(0,5)
+          .map(c=>({label:c.label,bbl:c.bbl}))};
+    }
+  }
+
+  /* Only a DIFFERENT READING of the same input is ambiguity. "177 7 AVENUE" vs "177 7 STREET"
+     counts; nearby 510 7 Avenue does not. */
+  const wantHouse=String(chosen.housenumber||pre.house||'').toUpperCase();
+  const alts=geo.slice(1).filter(c=>c.bbl!==chosen.bbl && wantHouse &&
+                                    String(c.housenumber||'').toUpperCase()===wantHouse);
+  return {ok:true, building:chosen, alternates:alts, note};
+}
+
+/* ------------------------------------------------------------------ report */
+/* `pre` is a building the user PICKED from the typeahead. It already carries the BBL and BIN
+   straight from GeoSearch, so we skip resolution entirely — no house-number guessing, no
+   fuzzy match, no chance of showing the wrong building. That is the whole point of the
+   autocomplete: it converts an ambiguous free-text problem into an exact identifier. */
+async function lookup(raw,pre){
+  if(ABC_LOOKUP_ENDPOINT){
+    const qs=pre&&pre.bbl ? `bbl=${encodeURIComponent(pre.bbl)}&address=${encodeURIComponent(raw)}`
+                          : `address=${encodeURIComponent(raw)}`;
+    const r=await fetch(`${ABC_LOOKUP_ENDPOINT}?${qs}`);
+    return r.json();
+  }
+  const res = (pre&&pre.bbl) ? {ok:true,building:pre,alternates:[]} : await resolve(raw);
+  if(!res.ok) return res;
+  const {bbl,bin}=res.building;
+
+  /* EVERY BIN ON THE LOT, not the one the resolver happened to carry.
+     Two separate failures met here, and together they produced a false all-clear:
+     (1) DOB and ECB join on BIN, but a tax lot is not one building. BBL 3005380001 (Red Hook
+         East, 1,836 units) has 22 building footprints: one BIN reports DOB 14 / ECB 14, the
+         whole lot reports DOB 308 / ECB 242 — a 22x undercount that also changed depending on
+         whether the visitor typed the address or clicked the typeahead.
+     (2) A PLUTO-resolved building carries bin:null, so `bin ? ... : []` skipped DOB and ECB
+         ENTIRELY and both tiles rendered 0. PLUTO is exactly how the NYCHA developments are
+         found, so the worst-affected buildings were the ones shown as clean.
+     Do NOT "simplify" this to a boro/block/lot query: those columns exist on both datasets but
+     are padded DIFFERENTLY (DOB lot "00001", ECB lot "0001"), so one of the two silently
+     returns zero. */
+
+  /* Chunked BIN query — see the note on binsAll. Throws if ANY chunk fails, so track() records a
+     failure rather than letting a partial total be printed as a whole one. */
+  async function socAllByBins(res,bins,cap){
+    const CHUNK=150; const out=[];
+    for(let i=0;i<bins.length;i+=CHUNK){
+      const part=bins.slice(i,i+CHUNK).map(b=>`'${sq(b)}'`).join(',');
+      const rows=await socAll(res,{$where:`bin in (${part})`},cap);
+      if(!Array.isArray(rows)) throw new Error(res+': a BIN chunk failed');
+      out.push(...rows);
+      if(out.length>=cap) break;
+    }
+    return out.slice(0,cap);
+  }
+
+  const lotBins = await binsForBbl(bbl, bin);
+  /* The BIN set as an ARRAY so it can be CHUNKED. One `bin in (...)` holding every BIN on a big
+     lot is a ~14KB $where — Socrata rejects it and .catch(()=>[]) renders the rejection as "no
+     DOB violations". BBL 4163500400 has 1,875 footprints. */
+  const binsAll = lotBins.length ? lotBins : (bin ? [String(bin)] : []);
+
+  /* FAILED IS NOT EMPTY. Every .catch(()=>[]) turns an outage into "none found", and the page
+     states that as fact. Measured: a 200+[] from wvxf-dwi5 rendered hpdOpen=0 countsExact=true
+     on a building with 159 real open violations; an im9z-53hg outage rendered a NYCHA building
+     as clean. Each source now records whether it ANSWERED. */
+  const failed=[];
+  const track=(name,p,fb)=>p.then(v=>(v==null?(failed.push(name),fb):v),
+                                  ()=>{failed.push(name); return fb;});
+
+  const [counts,vios,pluto,dob,ecb,aep,nychaRows,lit]=await Promise.all([
+    soc('wvxf-dwi5',{$select:'violationstatus, class, ordernumber, count(1) as n',
+                     $where:hpdLotWhere(bbl),
+                     $group:'violationstatus, class, ordernumber',$limit:'5000'}).catch(()=>null),
+    track('hpd-detail',socAll('wvxf-dwi5',{$where:hpdLotWhere(bbl),$order:'inspectiondate DESC'},600,600),[]),
+    track('pluto',soc('64uk-42ks',{$where:`bbl='${sq(bbl)}'`,$limit:'1'}),[]),
+    /* track() ALWAYS. The old ternary skipped tracking entirely when there was no BIN list, so a
+       failed footprints lookup produced DOB 0 / ECB 0 with complete:true — a confident clean
+       answer resting on a query that never succeeded. */
+    track('dob',binsAll.length?socAllByBins('3h2n-5cm9',binsAll,4000)
+                              :Promise.reject(new Error('no BIN list — DOB unknown, not zero')),[]),
+    track('ecb',binsAll.length?socAllByBins('6bgk-3dad',binsAll,4000)
+                              :Promise.reject(new Error('no BIN list — ECB unknown, not zero')),[]),
+    track('aep',soc('hcir-3275',{$where:`bbl='${sq(bbl)}'`,$limit:'5'}),[]),
+    /* NYCHA public-housing violations live in a SEPARATE dataset. Without this a NYCHA
+       building shows "HPD open 4" and an empty "We fix these" panel while carrying 115 NYCHA
+       violations, 6 of them ABC work (5 mold + 1 class-C lead). */
+    track('nycha',soc('im9z-53hg',{$where:`bbl='${sq(bbl)}'`,$order:'insp_dt DESC',$limit:'500'}),[]),
+    /* HPD LITIGATION. MODE A omitted this dataset entirely, so summary.openLitigations was
+       simply ABSENT from every widget lookup while python and netlify both returned a number —
+       and MODE B feeds this same renderer netlify's JSON, so the identical page showed the
+       field on one deployment and not the other.
+       $order is load-bearing: a building with more than 100 cases otherwise gets an arbitrary
+       100, and the open ones are not guaranteed to be among them. BBL 2051410120 has 144 cases
+       with 4 PENDING and reported 0 — a false all-clear on whether the City is suing. */
+    track('litigation',soc('59kj-x8nc',{$where:`bbl='${sq(bbl)}'`,
+                                        $order:'caseopendate DESC',$limit:'100'}),[])
+  ]);
+
+  const nycha=(nychaRows||[]).map(r=>{
+    const category=classify({ordernumber:r.viol_typ_ordr_no,novdescription:r.viol_desc});
+    return {id:r.viol_seq_no, class:r.hzrd_clas, order:r.viol_typ_ordr_no,
+            description:(r.viol_desc||'').trim(), inspected:saneDate(r.insp_dt),
+            development:r.development_name, category,
+            categoryLabel:(RULES[category]||{}).label||'Other',
+            weFix:!!(RULES[category]||{}).weFix};
+  });
+
+  /* EXACT counts from the grouped query. Counting the rows we happened to download reported
+     5,000 total / 2,728 open on a building with 13,431 / 5,584. */
+  const countsOk=Array.isArray(counts);
+  /* THE WIDGET WAS THE LEAST GUARDED PATH, and it is the most exposed one — it runs in a browser
+     with no app token, so it is throttled first and hardest. netlify/lookup.js had three guards
+     this file did not, all of which decide whether an EMPTY reply is an answer or an outage. */
+  if(!countsOk) failed.push('hpd-counts');
+
+  /* An empty 200 is ambiguous, so decide it with a SECOND source instead of guessing. Most
+     buildings genuinely have no NYCHA rows, so treating every empty NYCHA reply as an outage
+     would cry wolf on nearly every lookup — but PLUTO independently records the owner, and an
+     empty NYCHA result on a lot PLUTO says belongs to the Housing Authority is a failed read,
+     not a fact. This is how 766 Blake (525 units, NYC HOUSING AUTHORITY) rendered as clean. */
+  const _plutoOwner=String((pluto[0]||{}).ownername||'').toUpperCase();
+  if(/HOUSING AUTHORITY|NYCHA/.test(_plutoOwner) && (nychaRows||[]).length===0
+     && !failed.includes('nycha')) failed.push('nycha');
+
+  /* Same idea for HPD: the grouped count and the detail list come from the SAME dataset, so an
+     empty detail list under a non-zero open count is an internal contradiction, never a fact. */
+  if(countsOk && (vios||[]).length===0){
+    const openFromCounts=(counts||[]).reduce((n,r)=>
+      n+(String(r.violationstatus||'').toLowerCase().startsWith('open')?Number(r.n)||0:0),0);
+    if(openFromCounts>0) failed.push('hpd-detail');
+  }
+
+  /* AND THE ONE NEITHER FILE CAUGHT: both wvxf-dwi5 queries coming back 200 + [] at once.
+     `Array.isArray([])` is true, so countsOk stayed true and the contradiction check above never
+     fired — a full green all-clear built on two failed reads. A throttle does not politely fail
+     one query and answer the other; it fails the burst. HPD registers roughly one building in
+     three, so a lot that PLUTO says has residential units and that returns BOTH empty is not a
+     clean building, it is a silent outage. */
+  const _plutoUnits=Number((pluto[0]||{}).unitsres||0);
+  if(countsOk && (counts||[]).length===0 && (vios||[]).length===0 && _plutoUnits>=3
+     && !failed.includes('hpd-counts')) failed.push('hpd-both-empty');
+
+  let exactTotal=0, exactOpen=0; const byClass={}, exactByCat={};
+  for(const c of (counts||[])){
+    const n=Number(c.n)||0; exactTotal+=n;
+    if(!String(c.violationstatus||'').toLowerCase().startsWith('open')) continue;
+    exactOpen+=n;
+    byClass[c.class||'?']=(byClass[c.class||'?']||0)+n;
+    const cat=classify({ordernumber:c.ordernumber,novdescription:''});
+    if(cat!=='other') exactByCat[cat]=(exactByCat[cat]||0)+n;
+  }
+
+  const open=vios.filter(v=>String(v.violationstatus||'').toLowerCase().startsWith('open'));
+  const detailByCat={};
+  /* FIELD NAMES ARE THE CONTRACT. These must match netlify/lookup.js exactly — in MODE B this
+     renderer is fed that function's JSON verbatim. They did not match, and every building with
+     violations rendered as a fake "City data is not responding" outage while the entire sales
+     panel silently never appeared. */
+  const rows=open.map(v=>{
+    const category=classify(v);
+    detailByCat[category]=(detailByCat[category]||0)+1;
+    const spec=RULES[category]||{};
+    return {violationId:v.violationid, class:v.class, order:v.ordernumber, category,
+            /* CARRY THE STATUS. The mixed-order loop below filters on `v.status`, and without
+               this key it read undefined -> '' -> never startsWith('open') -> the loop could
+               never increment. Every text-confirmed 510/553 MOLD was silently dropped from
+               "we fix these" on any building that also had a pure 550. 1,142 BBLs citywide.
+               netlify/lookup.js has always emitted it; this file's copy of the fix was dead. */
+            status:v.violationstatus,
+            categoryLabel:spec.label||'Other', weFix:!!spec.weFix,
+            apartment:v.apartment, description:(v.novdescription||'').trim(),
+            inspected:saneDate(v.inspectiondate),
+            correctBy:saneDate(v.newcorrectbydate||v.originalcorrectbydate)};
+  });
+
+  /* The grouped query classifies by ORDER NUMBER ALONE - no description to read - so a MIXED
+     order (510, 553) can never be resolved there and lands in 'other'. The detail list reads the
+     text and gets it right. Taking the detail figure only when the category was ABSENT meant a
+     building with a pure 550 AND a text-confirmed 510 silently dropped every 510. ADD instead:
+     a mixed order cannot appear in the grouped tally under this category, so there is no
+     double-count. */
+  const mixedOrders=new Set(Object.values(RULES).flatMap(c=>c.mixed||[]));
+  const mixedByCat={};
+  for(const v of rows){
+    if(!mixedOrders.has(String(v.order))) continue;
+    if(!String(v.status||'').toLowerCase().startsWith('open')) continue;
+    if(!v.category||v.category==='other') continue;
+    mixedByCat[v.category]=(mixedByCat[v.category]||0)+1;
+  }
+  const mergedByCat={...exactByCat};
+  for(const [k,v] of Object.entries(mixedByCat)) mergedByCat[k]=(mergedByCat[k]||0)+v;
+  for(const [k,v] of Object.entries(detailByCat)) if(!(k in mergedByCat)) mergedByCat[k]=v;
+  /* atLeast: the mixed-order (510/553) part is counted off the DETAIL list, which is capped.
+     On a 5,222-violation building that cap is ~9% of the data, so the figure is a FLOOR, not a
+     total — and it was being printed as a bare fact directly under the "get a free quote" CTA.
+     netlify/lookup.js has always computed this; the widget dropped it, so the two surfaces
+     disagreed about how confident to sound about the same number. */
+  const mixedTruncated=Object.keys(mixedByCat).length>0 && rows.length<exactOpen;
+  const abcWork={};
+  for(const [k,spec] of Object.entries(RULES))
+    if(spec.weFix&&mergedByCat[k])
+      abcWork[k]={count:mergedByCat[k], label:spec.label, blurb:spec.blurb,
+                  atLeast:mixedTruncated&&!!mixedByCat[k]};
+
+  const p=pluto[0]||{};
+  const yb=p.yearbuilt?parseInt(p.yearbuilt,10):null;
+  const ur=p.unitsres?parseInt(p.unitsres,10):null;
+  let presumption=null;
+  if(yb&&yb<1960&&(ur||0)>=3)
+    presumption=`Built ${yb} with ${ur} residential units. Under Local Law 1 of 2004, paint in a `+
+      `pre-1960 multiple dwelling is presumed to be lead-based where a child under 6 resides, and `+
+      `the owner carries an annual inspection duty.`;
+  else if(yb&&yb<1960) presumption=`Built ${yb}. Pre-1960 construction — lead paint is likely present.`;
+
+  return {ok:true, resolvedAs:res.building.label,
+    /* Which source answered, when it was not the geocoder. netlify/lookup.js has always
+       returned this field and this renderer silently dropped it, so in MODE B a building
+       resolved from PLUTO looked identical to one the geocoder confirmed. */
+    note:res.note||null,
+    alternates:(res.alternates||[]).map(a=>a.label),
+    building:{bbl,bin,yearBuilt:yb,unitsRes:ur,ownerName:p.ownername||null},
+    leadPresumption:presumption,
+    summary:{hpdOpen:exactOpen, hpdTotalEverRecorded:exactTotal, countsExact:countsOk,
+             complete:failed.length===0, sourcesFailed:failed.slice(),
+             violationsShown:rows.length, violationsTruncated:rows.length<exactOpen,
+             byClass,
+             dobOpen:dob.filter(d=>!String(d.disposition_date||'').trim()
+                        &&!String(d.violation_category||'').toUpperCase().includes('DISMISS')).length,
+             dobTotal:dob.length,
+             ecbOpen:ecb.filter(e=>String(e.ecb_violation_status||'').toUpperCase().startsWith('ACTIVE')).length,
+             ecbTotal:ecb.length,
+             /* Anything not CLOSED is live — matches netlify/lookup.js and lookup.py exactly.
+                Counting only 'PENDING' would miss every other open status HPD uses. */
+             openLitigations:(lit||[]).filter(l=>String(l.casestatus||'').toUpperCase()!=='CLOSED').length,
+             inAEP:aep.length>0,
+             nychaCount:nycha.length, isNycha:nycha.length>0},
+    nycha, abcWork, violations:rows};
+}
+
+/* ------------------------------------------------------------------ rendering */
+const out=document.getElementById('out');
+/* Escapes ' and ` as well as the obvious three. No current sink uses a single-quoted or
+   backticked attribute, so this is not exploitable today — it is a landmine removed for
+   whoever edits this template next. */
+const esc=s=>String(s==null?'':s).replace(/[&<>"'`]/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
+
+/* ================================================================================================
+ * THE ASK. Everything above this line tells somebody what is wrong with their building. This is
+ * where we offer to fix it.
+ *
+ * MIRRORED FROM classification.json `_services`. That file is the single source of truth and the
+ * WordPress plugin reads the same list, so a trade is described in ONE place and never drifts into
+ * three different sales pitches.
+ *
+ * `match` is the classifier category whose live count this row can show. null means the City has
+ * no order number that identifies that trade — asbestos is real work with no HPD violation code —
+ * so the row is offered without a number rather than being given an invented one.
+ *
+ * NO PRICES HERE, EVER. Not a number, not a range, not "starting at". A price on an automated page
+ * about a building nobody has visited is a quote we would have to honour.
+ * ============================================================================================== */
+const SERVICES = [
+  { key:'lead', match:'lead', name:'Lead-based paint',
+    we_do:'Abatement, containment and dust-wipe clearance — and we file the certification with HPD when the work is done.',
+    why_now:'Lead carries the shortest clocks HPD sets, and an uncertified correction leaves the violation open on the record even after the work is finished.' },
+  { key:'mold', match:'mold', name:'Mold',
+    we_do:'Both licensed roles Article 32 requires — the assessor and the remediator — plus the clearance paperwork.',
+    why_now:'Missing the assessment is the usual reason a mold job fails at closeout, and re-inspection means paying for the work twice.' },
+  { key:'remediation', match:'remediation', name:'Cleaning / disinfection',
+    we_do:'We carry out the remediation and document it for the file.',
+    why_now:'These sit open on the record until the correction is certified.' },
+  { key:'asbestos', match:null, name:'Asbestos',
+    we_do:'Licensed asbestos work — survey, abatement and air monitoring through the licensed roles the job requires.',
+    why_now:'Asbestos is found during demolition and renovation, and finding it mid-job stops the job.' },
+  { key:'repairs', match:null, name:'The repairs behind the violations',
+    we_do:'General construction — the plaster, paint, windows, doors and carpentry an inspector wrote up.',
+    why_now:'Most violations are ordinary repair work that has never been done, and they keep accruing penalties until it is.' },
+  { key:'certify', match:null, name:'Certifying corrections with HPD',
+    we_do:'We file the certification, on the City’s own forms, for work that is already finished.',
+    why_now:'Work that is done but never certified still reads as an OPEN violation on the building record.' },
+  { key:'survey', match:null, name:'I do not know what I need — look at the building',
+    we_do:'We read the violation record with you and tell you what actually has to happen, in what order.',
+    why_now:'' }
+];
+
+/* What is on screen right now, so the two forms below know which building they are about without
+   re-parsing the DOM they were rendered into. Reset on every lookup. */
+let currentBuilding = null;
+
+/* One POST helper for both forms. Returns the parsed body; throws on anything else, and the
+   callers turn a throw into "we could not send that" rather than a silent no-op. */
+async function apiPost(path, body){
+  if(!ABC_API_BASE) throw new Error('no_api');
+  const res = await fetch(ABC_API_BASE + path, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  /* A REST route that is not there answers 404 with an HTML page on some hosts and a JSON error
+     on others. Either way it is not a result, and reporting it as one would tell somebody they
+     are being watched when nothing was written. */
+  let data=null;
+  try{ data = await res.json(); }catch(e){ throw new Error('bad_response_'+res.status); }
+  if(!res.ok && !data) throw new Error('http_'+res.status);
+  return data;
+}
+
+/* The two panels. Built as one string so render() can append them in a single write. */
+function askPanels(r){
+  const b=r.building, s=r.summary;
+  const addr=r.resolvedAs;
+  /* Counts come from abcWork, the same contract the "We fix these" block above uses.
+     `atLeast` means the figure is a FLOOR off a capped list — it is shown with a "+" rather than
+     presented as a total next to a button that asks for money. */
+  const work=r.abcWork||{};
+  /* An incomplete read must not pre-tick anything. Ticking "mold" for somebody because a dataset
+     answered and another did not is putting words in their mouth about their own building. */
+  const trustCounts = s.complete !== false;
+
+  const rows=[], extra=[];
+  for(const svc of SERVICES){
+    const info = (trustCounts && svc.match) ? work[svc.match] : null;
+    const n = info ? info.count : 0;
+    const on = n > 0;
+    const badge = n > 0
+      ? `<span class="ct">${info.atLeast?'':''}${n}${info.atLeast?'+':''} found</span>`
+      : `<span class="ct none">${svc.match?'none found':'ask us'}</span>`;
+    const html=`<label class="pick${on?' on':''}">
+        <span class="top">
+          <input type="checkbox" name="want" value="${esc(svc.key)}"${on?' checked':''}>
+          <span class="nm">${esc(svc.name)}</span>${badge}
+        </span>
+        <span class="we">${esc(svc.we_do)}</span>
+        ${svc.why_now?`<span class="wn">${esc(svc.why_now)}</span>`:''}
+      </label>`;
+    (on?rows:extra).push(html);
+  }
+
+  const found=rows.length;
+  let h='';
+
+  /* ---- panel 1: watch it ------------------------------------------------------------------ */
+  if(ABC_API_BASE){
+    h+=`<div class="panel" id="watchpanel">
+      <h3>Want us to watch this building?</h3>
+      <p class="lede">The City records new violations against <b>${esc(addr)}</b> without telling
+        anyone. We check every day and email you when a new lead or mold violation lands — with the
+        apartment, the class and the date it has to be corrected by. Nothing else, and you can stop
+        with one click in any email.</p>
+      <form id="watchf" novalidate>
+        <div class="rowfields">
+          <input type="email" id="wemail" placeholder="you@example.com"
+                 aria-label="Your email address" autocomplete="email" required>
+          <button type="submit" id="wgo">Watch this building</button>
+        </div>
+        <label class="sr">Leave this empty<input type="text" id="whp" tabindex="-1" autocomplete="off"></label>
+        <p class="fine">Free for up to five buildings. We send you a confirmation link first —
+          nothing starts until you click it.</p>
+        <div id="wsaid" style="margin-top:12px"></div>
+      </form>
+    </div>`;
+  }
+
+  /* ---- panel 2: what do you want cleared -------------------------------------------------- */
+  h+=`<div class="panel lead" id="quotepanel">
+    <h3>${found?'Which of these do you want cleared?':'What can we take off your hands?'}</h3>
+    <p class="lede">${found
+      ? `We found work on this building that we are licensed to do. Tick what you want priced and
+         we will come back with a scope — what has to happen, in what order, and what it costs.`
+      : `Nothing on this building is work we would be doing today. Tell us what you need anyway —
+         plenty of what we get called for was never written up as a violation.`}</p>
+    ${s.complete===false?`<p class="lede"><b>We could not read every City record just now</b>, so
+      nothing below is pre-ticked — tick what you know you need.</p>`:''}
+    <form id="quotef" novalidate>
+      ${rows.length?`<div class="subhead">Found on this building</div>${rows.join('')}`:''}
+      ${extra.length?`<div class="subhead">${rows.length?'Also ask us about':'What we do'}</div>${extra.join('')}`:''}
+
+      <div class="subhead" style="margin-top:18px">Where do we send it?</div>
+      <div class="rowfields">
+        <input type="text"  id="qname"  placeholder="Your name"  aria-label="Your name" autocomplete="name" required>
+        <input type="email" id="qemail" placeholder="Email"      aria-label="Your email address" autocomplete="email" required>
+        <input type="tel"   id="qphone" placeholder="Phone (optional)" aria-label="Your phone number" autocomplete="tel">
+      </div>
+      <textarea id="qnote" aria-label="Anything we should know"
+        placeholder="Anything we should know — access, tenants, a deadline you are up against, a hearing date…"></textarea>
+      <label class="sr">Leave this empty<input type="text" id="qhp" tabindex="-1" autocomplete="off"></label>
+      <button type="submit" id="qgo">Send this to us</button>
+      <p class="fine">No price is quoted automatically and nothing is charged for the quote. We
+        look at the actual violations first — a number produced by a web page about a building
+        nobody has visited is not a number we would stand behind.</p>
+      <div id="qsaid" style="margin-top:12px"></div>
+    </form>
+  </div>`;
+  return h;
+}
+
+/* Wire the panels after they are in the DOM. Called once per render. */
+function wireAsk(){
+  const el=id=>document.getElementById(id);
+
+  /* Tick-state styling. The label already toggles the checkbox natively; this only mirrors it
+     onto the row so the choice is visible without hunting for a small box. */
+  document.querySelectorAll('#quotepanel .pick input').forEach(cb=>{
+    cb.addEventListener('change',()=>cb.closest('.pick').classList.toggle('on',cb.checked));
+  });
+
+  const wf=el('watchf');
+  if(wf) wf.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const said=el('wsaid'), btn=el('wgo'), email=(el('wemail').value||'').trim();
+    said.innerHTML='';
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)){
+      said.innerHTML=`<div class="said bad">Please check that email address.</div>`;
+      el('wemail').focus(); return;
+    }
+    if(!currentBuilding){ said.innerHTML=`<div class="said bad">Search the building again first.</div>`; return; }
+    btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const res=await apiPost('watch',{
+        email, bbl:currentBuilding.bbl, address:currentBuilding.address, hp:(el('whp').value||'')
+      });
+      /* The server answers the SAME thing whatever happened — already subscribed, over the free
+         limit, brand new — because a different answer per outcome lets anyone use this box to
+         find out whether a given person is a customer. So we print what it says, and we do not
+         try to be more specific than it was. */
+      said.innerHTML=`<div class="said"><b>${res && res.ok===false?'Check that address':'Check your email'}</b>${
+        esc((res&&res.message)||'If that address is valid you will get a confirmation link in a minute.')}</div>`;
+      if(!res || res.ok!==false) wf.querySelector('.rowfields').style.display='none';
+    }catch(err){
+      said.innerHTML=`<div class="said bad"><b>That did not send</b>Nothing has been set up. Please
+        try again in a moment, or email us and we will add the building by hand.</div>`;
+      console.error(err);
+    }finally{ btn.disabled=false; btn.textContent='Watch this building'; }
+  });
+
+  const qf=el('quotef');
+  if(qf) qf.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const said=el('qsaid'), btn=el('qgo');
+    const want=[...qf.querySelectorAll('input[name=want]:checked')].map(i=>i.value);
+    const name=(el('qname').value||'').trim();
+    const email=(el('qemail').value||'').trim();
+    const phone=(el('qphone').value||'').trim();
+    const note=(el('qnote').value||'').trim();
+    said.innerHTML='';
+    if(!want.length){
+      said.innerHTML=`<div class="said bad">Tick at least one thing you want us to look at.</div>`;
+      return;
+    }
+    if(!name){ said.innerHTML=`<div class="said bad">Please tell us your name.</div>`; el('qname').focus(); return; }
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)){
+      said.innerHTML=`<div class="said bad">Please check that email address.</div>`;
+      el('qemail').focus(); return;
+    }
+    if(!currentBuilding){ said.innerHTML=`<div class="said bad">Search the building again first.</div>`; return; }
+
+    /* NO SERVER: hand it to the intake page instead of pretending to have sent it.
+     *
+     * ONLY THE PUBLIC FACTS TRAVEL IN THE URL. The first version of this appended the visitor's
+     * name, email, phone and message as query parameters and then navigated — which puts a real
+     * person's contact details into the browser history, the destination server's access log, any
+     * analytics on that page, and the Referer header sent to every third-party asset it loads.
+     * README.md:368 of this repository forbids exactly that, and this was the one place in the
+     * codebase breaking its own rule. Address and BBL are public record and are fine to carry.
+     *
+     * A cross-origin POST was the other option and was rejected: the intake page is on a different
+     * domain, so we cannot know it accepts POST, and a form that silently fails is worse than one
+     * that asks a returning visitor to retype their name. The trade is stated out loud below
+     * rather than hidden. */
+    if(!ABC_API_BASE){
+      /* AND NO INTAKE PAGE EITHER: SAY SO. DO NOT NAVIGATE.
+       *
+       * This used to send the visitor to ABC_INTAKE_URL unconditionally, which was hardcoded to
+       * https://abcenv.com/intake — a page that does not exist. Nor does anything else on that
+       * domain: every path on it, homepage included, answers 404 with an empty body. So somebody who
+       * had just read their violations, ticked the work they wanted and typed their name got a beat
+       * of "Taking you to the form" and then a blank error page. The lead was gone and that was their
+       * last impression of the company.
+       *
+       * A destination nobody has verified is worse than no destination, because it looks like it
+       * worked. If there is no server AND no intake page configured, the honest move is to keep the
+       * visitor where they are, keep everything they typed on screen, and tell them plainly. */
+      if(!ABC_INTAKE_URL){
+        const picked=want.map(k=>(SERVICES.find(s=>s.key===k)||{}).name||k);
+        const ways=[
+          ABC_PHONE ? `<a href="tel:${esc(ABC_PHONE.replace(/[^0-9+]/g,''))}">${esc(ABC_PHONE)}</a>` : null,
+          ABC_EMAIL ? `<a href="mailto:${esc(ABC_EMAIL)}?subject=${encodeURIComponent('Quote request — '+currentBuilding.address)}">${esc(ABC_EMAIL)}</a>` : null,
+        ].filter(Boolean);
+        said.innerHTML=`<div class="said bad"><b>We cannot send this from here yet</b>
+          This page is not yet connected to our office, so pressing Send again will not help — and we
+          are not going to tell you it arrived when it did not.
+          ${ways.length ? `Please reach us on ${ways.join(' or ')} and quote
+             <strong>${esc(currentBuilding.address)}</strong>.` : ''}
+          <br><br>What you ticked, so you can copy it:
+          <strong>${esc(picked.join(', '))}</strong> — BBL ${esc(String(currentBuilding.bbl||''))}.
+          <br><br><em>Your name, email and phone are still in the boxes above. Nothing was sent
+          anywhere.</em></div>`;
+        return;
+      }
+
+      /* ONLY THE PUBLIC FACTS TRAVEL IN THE URL. An earlier version appended the visitor's name,
+       * email, phone and message as query parameters and then navigated — which puts a real person's
+       * contact details into the browser history, the destination server's access log, any analytics
+       * on that page, and the Referer header sent to every third-party asset it loads. README.md:368
+       * forbids exactly that, and this was the one place in the codebase breaking its own rule.
+       * Address and BBL are public record and are fine to carry. */
+      const u=ABC_INTAKE_URL+'?'+new URLSearchParams({
+        address:currentBuilding.address, bbl:currentBuilding.bbl,
+        want:want.join(',')
+      }).toString();
+      said.innerHTML=`<div class="said"><b>Taking you to the form</b>Your building and what you
+        ticked are carried over. You will be asked for your contact details there — we do not put
+        your name, email or phone in a web address.</div>`;
+      /* A beat, so the sentence above is readable before the page changes. */
+      setTimeout(()=>{ location.href=u; }, 1200);
+      return;
+    }
+
+    btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const res=await apiPost('quote',{
+        name, email, phone, note, want,
+        bbl:currentBuilding.bbl, address:currentBuilding.address,
+        counts:currentBuilding.counts, hp:(el('qhp').value||'')
+      });
+      /* THREE outcomes, not two.
+         `ok:false`  — they can fix it themselves (bad email, nothing ticked, throttled).
+         `stored:false` — it reached us by email but was NOT saved. The bold used to say
+                       "Got it — that is with us now" directly above the server's own sentence
+                       explaining that it had not been recorded. Never print a headline that
+                       contradicts the line under it.
+         otherwise   — really filed. */
+      if(res && res.ok===false){
+        said.innerHTML=`<div class="said bad">${esc(res.message||'Please check what you entered.')}</div>`;
+      }else if(res && res.stored===false){
+        said.innerHTML=`<div class="said bad"><b>Not fully saved</b>${
+          esc(res.message||'Please get in touch rather than waiting for a reply.')}</div>`;
+      }else{
+        said.innerHTML=`<div class="said"><b>Got it — that is with us now</b>${
+          esc((res&&res.message)||'We will come back to you about '+currentBuilding.address+'.')}</div>`;
+        qf.querySelectorAll('.pick,.subhead,.rowfields,textarea,button').forEach(n=>n.style.display='none');
+      }
+    }catch(err){
+      said.innerHTML=`<div class="said bad"><b>That did not send</b>Nothing reached us. Please try
+        again in a moment.</div>`;
+      console.error(err);
+    }finally{ btn.disabled=false; btn.textContent='Send this to us'; }
+  });
+}
+
+function render(r,raw){
+  /* Cleared FIRST. A failed lookup that left the previous building in place would let the quote
+     form post the address on screen a moment ago against a search that just failed. */
+  currentBuilding=null;
+  if(!r.ok){
+    if(r.error==='no_exact_match'){
+      /* TWO guards raise this now. The house-number guard sets `typed` to a NUMBER and carries
+         no message; the STREET guard sets it to a STREET NAME and supplies its own. Printing
+         the fixed headline for both reads "We could not find number Columbia St on that
+         street", so a supplied message wins. netlify/lookup.js's version of that message ends
+         with its own "Did you mean one of these?", which MODE B feeds here verbatim — hence
+         the check, so the visitor is not asked the same question twice. */
+      const head = r.message ? esc(r.message)
+                             : `We could not find number ${esc(r.typed)} on that street.`;
+      const lead = r.message ? '' : `We are not going to show you a different building's violations. `;
+      const ask  = /did you mean/i.test(r.message||'') ? '' : `<p class="meta">${lead}Did you mean:</p>`;
+      out.innerHTML=`<div class="card err">
+        <p class="addr">${head}</p>
+        ${ask}
+        <ul class="cands">${r.candidates.map(c=>
+          `<li><button type="button" data-a="${esc(c.label)}" data-bbl="${esc(c.bbl||'')}"
+            >${esc(c.label)}</button></li>`).join('')}</ul>
+      </div>`;
+      out.querySelectorAll('button[data-a]').forEach(b=>b.onclick=()=>{
+        document.getElementById('q').value=b.dataset.a;
+        /* Setting .value in code does NOT fire an input event, so the previous typeahead pick
+           would otherwise survive and we would look up the building they just rejected. */
+        picked=b.dataset.bbl ? {bbl:b.dataset.bbl, bin:null, label:b.dataset.a} : null;
+        document.getElementById('f').requestSubmit();
+      });
+      return;
+    }
+    out.innerHTML=`<div class="card err"><p class="addr">No match</p>
+      <p class="meta">${esc(r.message||'No NYC building matched that address. Check the street name and borough, and leave off the apartment number.')}</p></div>`;
+    return;
+  }
+
+  const s=r.summary, b=r.building;
+  /* abcWork is the contract shape shared with netlify/lookup.js: {key:{count,label,blurb}}. */
+  const fix=Object.entries(r.abcWork||{});
+  /* What the two forms below will submit. Taken from the RESOLVED building, never from the box
+     the visitor typed into — those differ often enough to matter (846 Flushing Avenue is
+     13 Garden Street to HPD) and the BBL is what any of this is actually keyed on. */
+  currentBuilding={
+    bbl:b.bbl, address:r.resolvedAs,
+    counts:Object.fromEntries(fix.map(([k,v])=>[k,v.count]))
+  };
+
+  let h=`<div class="card">
+    <p class="addr">${esc(r.resolvedAs)}</p>
+    <p class="meta">BBL ${esc(b.bbl)}${b.bin?' &middot; BIN '+esc(b.bin):''}${
+      b.yearBuilt?' &middot; built '+b.yearBuilt:''}${
+      b.unitsRes!=null?' &middot; '+b.unitsRes+' residential units':''}</p>
+
+    <div class="stats">
+      <div class="stat"><b>${s.hpdOpen}</b><span>HPD open</span></div>
+      <div class="stat c-crit"><b>${s.byClass.C||0}</b><span>Class C</span></div>
+      <div class="stat c-warn"><b>${s.byClass.B||0}</b><span>Class B</span></div>
+      <div class="stat c-calm"><b>${s.byClass.A||0}</b><span>Class A</span></div>
+      <div class="stat"><b>${s.dobOpen ?? 0}</b><span>DOB open</span></div>
+      <div class="stat"><b>${s.ecbOpen ?? 0}</b><span>ECB active</span></div>
+    </div>`;
+
+  if(fix.length){
+    h+=`<div class="wefix"><h3>We fix these</h3>`;
+    for(const [k,info] of fix){
+      const n=info.count, label=(info.label||k).toLowerCase();
+      /* "at least" when the figure is a FLOOR — say so rather than presenting a floor as a
+         total directly above a quote button. A number an owner acts on has to be one we can
+         stand behind, and this one was computed off a capped list. */
+      h+=`<div class="line"><span>${info.atLeast?'at least ':''}<b>${n}</b> open ${esc(label)} violation${n===1?'':'s'}</span>
+          <span class="muted">${esc(info.blurb||'')}</span></div>`;
+    }
+    /* This used to leave the page for an intake form on another domain. The panel that asks WHICH
+       of these to clear is now further down this same page, so the button carries them there
+       instead of dropping them onto a blank form that has to ask for the address again.
+       Focusing the first tickbox is what moves the view: an embedded copy of this page is sized to
+       its full content and does not scroll internally, so an #anchor jump inside the iframe does
+       nothing visible — but a browser scrolls its ANCESTOR frames to reveal a focused element. */
+    h+=`<button type="button" class="cta" id="tofix">Tell us which ones to clear &darr;</button>
+      </div>`;
+  }
+
+  if(s.isNycha){
+    const fix=(r.nycha||[]).filter(n=>n.weFix);
+    h+=`<div class="note"><b>NYCHA (public housing).</b> ${s.nychaCount} violation${
+      s.nychaCount===1?'':'s'} on record in the City's separate NYCHA dataset${
+      fix.length?` — including <b>${fix.length}</b> that ${fix.length===1?'is':'are'} ABC work`:''
+    }. NYCHA records carry no open/closed status, so these are listed apart from the HPD counts
+      above rather than guessed at.</div>`;
+  }
+  if(s.inAEP) h+=`<div class="note"><b>This building is in HPD's Alternative Enforcement Program.</b>
+    AEP buildings face escalated inspections, fees, and City-performed repairs billed to the owner.</div>`;
+  if(r.leadPresumption) h+=`<div class="note">${esc(r.leadPresumption)}</div>`;
+  /* alternates is an array of STRINGS in both implementations. It used to call .label on them
+     here, which rendered the literal word "undefined" to the public. */
+  /* Say so when the geocoder was not the source. A building resolved from PLUTO is a real lot
+     from the City's own tax roll, but the visitor is entitled to know which record answered. */
+  if(r.note) h+=`<div class="note">${esc(r.note)}</div>`;
+  if(r.alternates && r.alternates.length) h+=`<div class="note">Also matched
+    ${r.alternates.map(a=>esc(a)).join('; ')} — check you have the right one.</div>`;
+  if(s.countsExact===false) h+=`<div class="note">Counts could not be confirmed against the
+    City's totals just now — treat the numbers below as a partial view.</div>`;
+
+  /* THE OUTAGE BANNER LIVES HERE, NOT IN THE "no violations" BRANCH.
+     It used to sit in the else-arm of `if(r.violations.length)`, so it could only ever render on
+     a building showing ZERO HPD violations — which meant that on every building that HAD
+     violations, a DOB, ECB or NYCHA outage rendered as a confident "DOB open 0" with no warning
+     at all. The backend was honest the whole time; this renderer threw the honesty away, and in
+     doing so it also silenced the PLUTO/NYCHA owner cross-check and the counts-vs-detail
+     contradiction check, both of which report by setting complete:false and nothing else. */
+  if(s.complete===false) h+=`<div class="note" style="border-left-color:var(--warn,#c60)">
+    <b>We could not reach every City dataset for this building</b>
+    (${esc((s.sourcesFailed||[]).join(', '))}). Anything below that depends on those sources is
+    incomplete — this is <b>not</b> a clean bill of health. Please try again in a moment.</div>`;
+
+  if(r.violations.length){
+    const shown=r.violations.length;
+    h+=`<h3 style="margin:22px 0 0;font-size:1rem">${
+      s.violationsTruncated ? `Showing the ${shown} most recent of ${s.hpdOpen} open violations`
+                            : `All ${shown} open violations`}</h3>
+      <div class="scroll"><table><thead><tr>
+        <th>Class</th><th>Apt</th><th>Violation</th><th>Inspected</th><th>Correct by</th>
+      </tr></thead><tbody>`;
+    for(const v of r.violations){
+      h+=`<tr>
+        <td><span class="cls ${esc(v.class||'A')}" title="${esc(CLASS_MEANING[v.class]||'')}">${esc(v.class||'?')}</span></td>
+        <td>${esc(v.apartment||'—')}</td>
+        <td class="d">${esc((v.description||'').slice(0,300))}${
+          v.weFix?`<span class="tag">${esc(v.categoryLabel||v.category)} — we fix these</span>`:''}</td>
+        <td class="muted">${esc(v.inspected||'—')}</td>
+        <td class="muted">${esc(v.correctBy||'—')}</td>
+      </tr>`;
+    }
+    h+=`</tbody></table></div>`;
+  } else {
+    /* "No violations" is only sayable when every source ANSWERED. A single dataset outage used
+       to render this same green all-clear - on a NYCHA building with 51 violations in the
+       dataset that had just failed. Silence is not zero. */
+    if (s.complete !== false) {
+      h+=`<div class="note" style="border-left-color:var(--fix)">
+        No open HPD violations on this building right now${s.hpdTotalEverRecorded?` (${s.hpdTotalEverRecorded} recorded historically)`:''}.</div>`;
+    }
+  }
+  h+=`</div>`;
+  h+=askPanels(r);
+  out.innerHTML=h;
+  wireAsk();
+  const jump=document.getElementById('tofix');
+  if(jump) jump.onclick=()=>{
+    const first=document.querySelector('#quotepanel input[name=want]')
+             || document.getElementById('qname');
+    if(first) first.focus();
+  };
+}
+
+/* ------------------------------------------------------------------ typeahead */
+const q=document.getElementById('q'), acBox=document.getElementById('ac');
+const acList=acBox.querySelector('ul');
+let acItems=[], acIndex=-1, acTimer=null, acSeq=0, picked=null;
+
+/* SPEED. GeoSearch is slow — measured live 2026-07-28: 1.7s to 4.6s for /autocomplete and up
+   to 8.2s for /search, with no upstream caching (three identical calls took 3.4s, 2.1s, 3.6s).
+   A typeahead that waits two seconds per keystroke feels broken.
+   Two cheap fixes make it feel instant without lying to anyone:
+     1. cache every answer we get, so re-typing is free;
+     2. PREFIX REUSE — "353 Linden S" is necessarily a subset of "353 Linden", so filter the
+        cached wider result locally and paint it immediately, then let the real request
+        confirm. The visitor sees suggestions in ~0ms while the network catches up. */
+const acCache=new Map();
+
+function acLocalGuess(text){
+  /* EXACT cache hits only. This used to filter a SHORTER query's cached results by prefix, on
+     the premise that "353 Linden S" must be a subset of "353 Linden". That premise is false:
+     /autocomplete returns a ranked TOP-10, so the right building is often absent from the
+     wider query's results. Measured: typing "150 Man" painted exactly ONE suggestion — the
+     MANHATTAN building — and held it for ~3.8s while the real answer (which includes the
+     Brooklyn one) was still in flight. Clicking it handed the wrong BBL straight through.
+     A fast wrong answer is worse than a slow right one. */
+  return acCache.get(text) || null;
+}
+
+function acClose(){ acBox.hidden=true; q.setAttribute('aria-expanded','false'); acIndex=-1; }
+
+function acShow(items){
+  acItems=items;
+  if(!items.length){ acClose(); return; }
+  acList.innerHTML=items.map((it,i)=>
+    `<li role="option" id="ac-${i}" aria-selected="false">${esc(it.label)}</li>`).join('');
+  acBox.hidden=false; q.setAttribute('aria-expanded','true'); acIndex=-1;
+  [...acList.children].forEach((li,i)=>{
+    li.onmousedown=e=>{ e.preventDefault(); acPick(i); };
+  });
+}
+
+function acMove(d){
+  if(acBox.hidden||!acItems.length) return;
+  acIndex=(acIndex+d+acItems.length)%acItems.length;
+  [...acList.children].forEach((li,i)=>{
+    li.setAttribute('aria-selected', i===acIndex?'true':'false');
+    if(i===acIndex){ li.scrollIntoView({block:'nearest'}); q.setAttribute('aria-activedescendant',li.id); }
+  });
+}
+
+function acPick(i){
+  const it=acItems[i]; if(!it) return;
+  q.value=it.label;
+  picked=it;                  // carries bbl + bin — resolution is now unnecessary
+  acClose();
+  document.getElementById('f').requestSubmit();
+}
+
+q.addEventListener('input',()=>{
+  picked=null;                // they edited the text, so the previous pick no longer applies
+  const text=q.value.trim();
+  clearTimeout(acTimer);
+  if(text.length<3){ acClose(); return; }
+
+  // Paint from cache first — usually instant, and correct because a longer query can only
+  // narrow a shorter one's results.
+  const guess=acLocalGuess(text);
+  if(guess) acShow(guess.slice(0,7));
+  if(acCache.has(text)) return;               // exact hit: no network call at all
+
+  /* Debounced, and sequence-guarded: a slow response for "35" must never overwrite the
+     suggestions for "353 Linden" that the user is already looking at. The City's own docs
+     warn these responses arrive out of order, so this guard is required, not defensive. */
+  acTimer=setTimeout(async()=>{
+    const seq=++acSeq;
+    try{
+      /* Two tries and retry-on-empty, because this file's own rule #1 is that an empty result
+         is not an answer — and the typeahead was the one place breaking it. Worse, it then
+         CACHED the empty array, so a single transient empty killed suggestions for that exact
+         string for the rest of the session. Empties are never cached now. */
+      const d=await getJSON(
+        `https://geosearch.planninglabs.nyc/v2/autocomplete?${new URLSearchParams({text})}`,
+        {tries:2, retryIfEmpty:x=>!(x&&x.features&&x.features.length)});
+      const items=(d.features||[]).map(f=>{
+        const p=f.properties||{}, pad=(p.addendum||{}).pad||{};
+        return pad.bbl ? {label:p.label, bbl:String(pad.bbl),
+                          bin:pad.bin?String(pad.bin):null,
+                          housenumber:p.housenumber} : null;
+      }).filter(Boolean);
+      if(items.length) acCache.set(text,items);   // never cache an empty — see above
+      if(seq!==acSeq) return;
+      acShow(items.slice(0,7));
+    }catch(e){
+      /* Typeahead is a convenience and must never block typing. But it must never leave the
+         PREVIOUS query's suggestions on screen after a failed fetch either — the visitor would
+         be picking a building unrelated to what they typed. So: fail closed, UNLESS we already
+         painted a locally-derived guess, which is filtered from the text they actually typed
+         and is therefore not stale. */
+      if(seq===acSeq && !guess) acClose();
+    }
+  },300);
+});
+
+q.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){ e.preventDefault(); acMove(1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); acMove(-1); }
+  else if(e.key==='Enter'&&acIndex>=0&&!acBox.hidden){ e.preventDefault(); acPick(acIndex); }
+  else if(e.key==='Escape'){ acClose(); }
+});
+q.addEventListener('blur',()=>setTimeout(acClose,120));
+
+/* SEQUENCE GUARD on the submit path, mirroring the one the typeahead has had all along.
+   A lookup takes 4-16s, and picking a typeahead suggestion calls form.requestSubmit() directly —
+   which fires regardless of the disabled button. So a slow EARLIER lookup could land AFTER a
+   newer one and render a DIFFERENT BUILDING'S violations under the address now on screen.
+   All three guards below are load-bearing:
+     render  — a stale success must not overwrite a newer, correct result
+     catch   — a stale FAILURE must not wipe a correct result that already rendered, which is
+               the worse of the two: it destroys a real answer for a real building
+     finally — a stale completion must not re-enable the button and reset its label while a
+               newer lookup is still in flight, or the page reads idle mid-request */
+let subSeq = 0;
+document.getElementById('f').addEventListener('submit',async e=>{
+  e.preventDefault();
+  acClose();
+  const raw=q.value.trim();
+  if(!raw) return;
+  const seq=++subSeq;
+  const btn=document.getElementById('go');
+  btn.disabled=true; btn.textContent='Checking…';
+  out.innerHTML=`<div class="card"><p class="meta">Checking City records…</p></div>`;
+  try{
+    const res=await lookup(raw,picked);
+    if(seq!==subSeq) return;
+    render(res,raw);
+  }catch(err){
+    if(seq!==subSeq) return;
+    /* Never let an outage read as "no violations found" — that would tell an owner with 40
+       open violations that they are clean. */
+    out.innerHTML=`<div class="card err"><p class="addr">City data is not responding</p>
+      <p class="meta">This is not a result for your building. NYC Open Data is slow or down right
+      now — please try again in a moment.</p></div>`;
+    console.error(err);
+  }finally{ if(seq===subSeq){ btn.disabled=false; btn.textContent='Check building'; } }
+});
+
+/* ==============================================================================================
+ * EMBED HEIGHT REPORTING.
+ *
+ * This file is a whole PAGE, and the realistic way a website maker puts it on WordPress,
+ * Squarespace, Wix or Webflow is an <iframe>. An iframe has a FIXED height, but this page's
+ * height is not fixed — a clean building renders one line, and 735 Lincoln Avenue renders a table
+ * of 374 rows. Pick a small height and the results are clipped with no way to scroll to them;
+ * pick a big one and every clean lookup leaves a screen of blank space.
+ *
+ * So the page measures itself and tells its parent. The snippet in WEBSITE-INSTALL.md listens and
+ * resizes. If nobody is listening this does nothing at all — no error, no visible change — so it
+ * is equally safe when the file is hosted as a standalone page.
+ *
+ * postMessage targets '*' deliberately: we do not know which domain will embed this, and the
+ * message carries nothing but a number. Nothing is ever RECEIVED from the parent, so there is no
+ * inbound surface to abuse.
+ * ============================================================================================== */
+(function(){
+  // Guard everything. This runs the instant the file is parsed, so a missing browser API here
+  // takes the whole page down with it — and the same script is lifted out and run under Node by
+  // the parity gates, where there is no DOM at all. Fail silent, never throw.
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (!document.documentElement || !window.parent || window.parent === window) return;
+  var last = 0;
+  function report(){
+    var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (h && Math.abs(h - last) > 8) {           // ignore sub-pixel jitter
+      last = h;
+      try { window.parent.postMessage({ abcViolationWidgetHeight: h }, '*'); } catch (e) {}
+    }
+  }
+  report();
+  window.addEventListener('load', report);
+
+  // POLL, ALWAYS — do not rely on ResizeObserver alone.
+  //
+  // Measured: with only `new ResizeObserver(report).observe(document.body)`, a lookup on 609 West
+  // 180 Street grew the page to 52,653px and the observer never fired. The iframe stayed at
+  // 1,528px and every one of the 374 violation rows was clipped, with no scrollbar to reach them
+  // — the exact failure the height reporting exists to prevent, and invisible unless you actually
+  // embed it and look.
+  //
+  // A getBoundingClientRect every 400ms is free, and report() already ignores anything under an
+  // 8px change, so a stable page posts nothing at all. The observer stays as well: it reacts
+  // instantly when it does fire, and the poll is the backstop when it does not.
+  if (window.ResizeObserver) {
+    try { new ResizeObserver(report).observe(document.documentElement); } catch (e) {}
+    try { new ResizeObserver(report).observe(document.body); } catch (e) {}
+  }
+  setInterval(report, 400);
+})();
+</script>
+</body>
+</html>
