@@ -1,0 +1,55 @@
+<style id="abcDemoRibbon">
+/* The ONLY styling this file still carries. ABC's green, Open Sans, the light-lock and the whole
+   look now live in abc-handoff/widget.html, so the plugin ABC installs is already on-brand and
+   this page cannot look better than the real thing. What is left is the demo notice. */
+.abc-demo{background:#14181d;color:#fff;font:600 13px/1.4 "Open Sans",-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  padding:9px 16px;display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:center;text-align:center}
+.abc-demo b{color:#5db33b;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px}
+.abc-demo span{opacity:.82;font-weight:400}
+</style>
+<script>
+/* ============================================================================================
+ * ABC DEMO SHIM — generated into index.html by build.py. Not part of the product.
+ *
+ * A static GitHub Pages URL has no back-end, so the two forms have nowhere to POST. Without this
+ * the widget takes its honest "this page is not connected to our office" path — correct, but it
+ * shows somebody evaluating the product an error instead of the product.
+ *
+ * So the two API calls are answered here, locally, with the SAME text the live server returns.
+ * Nothing is sent anywhere and nothing is stored; the notice at the top of the page says so, and
+ * each reply says so again, because a signup box that looks like it worked and did nothing is the
+ * single most damaging thing a demo can do.
+ * ============================================================================================ */
+(function(){
+  var BASE = '__DEMO_BASE__';
+
+  var real = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    if(url.indexOf(BASE) !== 0) return real(input, init);   // live City data still goes out for real
+
+    var path = url.slice(BASE.length).replace(/^\/+/, '');
+    var msg  = (path.indexOf('watch') === 0)
+      ? 'If that address is valid you will get a confirmation link in a minute. ' +
+        '(Demonstration page — nothing was sent and no address was stored.)'
+      : 'Thank you — we have your request and we will come back to you with a proposal. ' +
+        '(Demonstration page — nothing was sent and no details were stored.)';
+
+    return Promise.resolve(new Response(
+      JSON.stringify({ ok:true, message:msg }),
+      { status:200, headers:{ 'Content-Type':'application/json' } }
+    ));
+  };
+
+  function ribbon(){
+    if(document.querySelector('.abc-demo')) return;
+    var d=document.createElement('div');
+    d.className='abc-demo';
+    d.innerHTML='<b>Demonstration</b><span>Building data below is live from New York City. '+
+                'The two forms are switched off — nothing you type is sent or stored.</span>';
+    document.body.insertBefore(d, document.body.firstChild);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ribbon);
+  else ribbon();
+})();
+</script>

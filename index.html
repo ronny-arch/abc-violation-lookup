@@ -27,23 +27,44 @@
      this comment naming a file that has never existed.)
 -->
 <style>
+/* Open Sans is ABC's heading face. Loaded here rather than assumed: the widget also runs as a
+   standalone page and inside themes that do not ship it, and a --display stack that silently
+   falls back to system-ui everywhere is a brand decision quietly not happening. @import is used
+   over a <link> because this file is embedded as a fragment by the WordPress plugin, where a tag
+   in <head> is not ours to add. If the request fails the stack falls back and nothing breaks. */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&display=swap');
+/* ABC's real palette, read off tryabcenvironmental.com on 2026-07-30 — not a guess and not a
+   placeholder any more. Their buttons are #5db33b with white text on a white page, headings are
+   Open Sans 700, and corners are nearly square (3px). This widget is embedded IN that site, so it
+   has to look like it belongs there rather than like a tool somebody pasted in.
+
+   LIGHT-LOCKED ON PURPOSE. The site has no dark mode; it is white in every viewport. A visitor on
+   a dark-mode phone was getting a near-black panel sitting inside a white page — the one place a
+   dark theme is unambiguously wrong. The dark block below therefore restates the LIGHT values
+   rather than being deleted, so the intent is legible to whoever reads this next: this is a
+   decision, not a missing feature. */
 :root{
   --bg:#ffffff; --surface:#f7f8f9; --line:#e2e5e9;
   --ink:#14181d; --ink-soft:#5b646e;
-  --brand:#0f5c4a;              /* placeholder — replace with ABC's real colour */
+  --brand:#5db33b;              /* ABC green — their button colour, verified on the live site */
   --brand-ink:#ffffff;
   --crit:#b4232a;               /* class C — immediately hazardous */
   --warn:#a8620d;               /* class B — hazardous */
   --calm:#6b7480;               /* class A — non-hazardous */
-  --fix:#0f5c4a;                /* the "we fix these" accent */
-  --radius:10px;
+  --fix:#5db33b;                /* the "we fix these" accent */
+  --radius:4px;                 /* ABC's own buttons are 3px — near-square, not pill-soft */
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --display:"Open Sans",var(--font);
+  color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
-  :root{ --bg:#101317; --surface:#181c22; --line:#2a3038; --ink:#eef1f4; --ink-soft:#9aa4b0;
-         --crit:#ff6b71; --warn:#e0a049; --calm:#8b95a1; --brand:#2ea88a; --fix:#2ea88a;
-         --brand-ink:#06120e; }
+  :root{ color-scheme:light;
+         --bg:#ffffff; --surface:#f7f8f9; --line:#e2e5e9; --ink:#14181d; --ink-soft:#5b646e;
+         --crit:#b4232a; --warn:#a8620d; --calm:#6b7480; --brand:#5db33b; --fix:#5db33b;
+         --brand-ink:#ffffff; }
 }
+h1,h2,h3,.vsec>span,.subhead{font-family:var(--display)}
+h1{font-weight:800}
 *{box-sizing:border-box}
 body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);line-height:1.5}
 .abc{max-width:880px;margin:0 auto;padding:24px 18px 64px}
@@ -157,6 +178,72 @@ ul.cands li{margin:3px 0}
 ul.cands button{background:none;border:0;color:var(--brand);text-decoration:underline;
   padding:0;font-size:.9rem;font-weight:500;cursor:pointer}
 .src{margin-top:22px;font-size:.75rem;color:var(--ink-soft)}
+.src summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
+  font-weight:600;color:var(--ink-soft);padding:4px 0}
+.src summary::-webkit-details-marker{display:none}
+.src summary::before{content:"›";display:inline-block;transition:transform .15s;font-size:1.05rem;line-height:1}
+.src[open] summary::before{transform:rotate(90deg)}
+.src summary:hover{color:var(--brand)}
+.src p{margin:6px 0 0;max-width:70ch;line-height:1.55}
+
+/* ---- the named violations inside a ticked service row ------------------------------------- */
+.vlist{list-style:none;margin:10px 0 0 26px;padding:0;display:grid;gap:7px}
+.vit{display:flex;gap:9px;align-items:flex-start;background:var(--surface);
+  border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.vtx{font-size:.83rem;line-height:1.45;min-width:0}
+.vtx b{display:block;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--ink-soft);margin-bottom:2px}
+.vby{display:block;font-style:normal;font-size:.76rem;color:var(--ink-soft);margin-top:4px}
+.vmore{margin:8px 0 0 26px;font-size:.8rem;color:var(--ink-soft);font-style:italic}
+
+/* ---- grouped headings in the quote menu ---------------------------------------------------- */
+.subhead.sub1{margin-top:24px;font-size:.78rem;color:var(--ink)}
+.subhead.sub2{margin-top:16px;opacity:.85}
+
+/* ---- the closer ---------------------------------------------------------------------------- */
+.closer{margin-top:24px;padding-top:18px;border-top:2px solid var(--brand)}
+.promise{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:5px}
+.promise li{position:relative;padding-left:22px;font-size:.87rem;color:var(--ink)}
+.promise li::before{content:"✓";position:absolute;left:0;top:0;color:var(--brand);font-weight:800}
+
+/* ---- the monitoring pitch ------------------------------------------------------------------ */
+.panel.watch{border:2px solid var(--brand)}
+.wbul{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px}
+.wbul li{position:relative;padding-left:22px;font-size:.88rem;line-height:1.5}
+.wbul li::before{content:"→";position:absolute;left:0;top:0;color:var(--brand);font-weight:800}
+.scope{display:grid;gap:8px;margin-bottom:14px}
+@media(min-width:560px){.scope{grid-template-columns:1fr 1fr}}
+.scope .opt{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);
+  border-radius:8px;padding:11px 13px;cursor:pointer;transition:border-color .12s,background .12s}
+.scope .opt:hover{border-color:var(--brand)}
+.scope .opt.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,var(--surface))}
+.scope .opt input{margin:2px 0 0;width:17px;height:17px;accent-color:var(--brand);flex:none}
+.scope .opt span{font-size:.82rem;color:var(--ink-soft);line-height:1.4}
+.scope .opt span b{display:block;font-size:.93rem;color:var(--ink);margin-bottom:2px}
+.said.more{margin-top:9px}
+.said.more b{display:block}
+
+/* ---- violation cards ----------------------------------------------------------------------- */
+.vsec{display:flex;flex-direction:column;margin:22px 0 10px;padding-bottom:7px;
+  border-bottom:1px solid var(--line)}
+.vsec>span{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--ink-soft)}
+.vsec>i{font-style:normal;font-size:.79rem;color:var(--ink-soft);opacity:.85;margin-top:3px}
+.vsec.brand{border-bottom:2px solid var(--brand)}
+.vsec.brand>span{color:var(--brand)}
+.vgrid{display:grid;gap:10px}
+@media(min-width:680px){.vgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.vcard{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:12px 13px;
+  display:flex;flex-direction:column;gap:8px;min-width:0}
+.vcard.fix{border-color:color-mix(in srgb,var(--brand) 45%,var(--line));
+  background:color-mix(in srgb,var(--brand) 5%,var(--bg))}
+.vcard>header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vapt{font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--ink-soft)}
+.vdesc{margin:0;font-size:.85rem;line-height:1.5;overflow-wrap:anywhere}
+.vcard>footer{display:flex;gap:14px;flex-wrap:wrap;margin-top:auto;padding-top:8px;
+  border-top:1px dashed var(--line);font-size:.75rem;color:var(--ink-soft)}
+.vcard>footer b{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:650}
 @media (prefers-reduced-motion:no-preference){.card{animation:in .18s ease-out}}
 @keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 </style>
@@ -180,9 +267,17 @@ ul.cands button{background:none;border:0;color:var(--brand);text-decoration:unde
 
   <div id="out" aria-live="polite"></div>
 
-  <p class="src">Sources: NYC Open Data — HPD violations (wvxf-dwi5), DOB violations (3h2n-5cm9),
-    ECB/OATH (6bgk-3dad), PLUTO (64uk-42ks), HPD registrations (tesw-yqqr); addresses via NYC
-    Planning Labs GeoSearch.</p>
+  <!-- The dataset IDs are not deleted — every number on this page comes from the City's own
+       records and being able to show which ones is the difference between this and a marketing
+       page. But a visitor reading about their building does not need "wvxf-dwi5" in their face,
+       so it folds away. Open by one click, still crawlable, still citable. -->
+  <details class="src">
+    <summary>Where these numbers come from</summary>
+    <p>Everything above is read live from the City's own public records — nothing is estimated and
+      nothing is stored about you. NYC Open Data: HPD violations (wvxf-dwi5), DOB violations
+      (3h2n-5cm9), ECB/OATH (6bgk-3dad), PLUTO (64uk-42ks), HPD registrations (tesw-yqqr).
+      Addresses resolved by NYC Planning Labs GeoSearch.</p>
+  </details>
 </div>
 
 <script>
@@ -204,8 +299,12 @@ const ABC_INTAKE_URL = null;
 
 /* Shown only when there is no server and no intake page, so a visitor still has a way to reach
  * somebody. NEVER invent these — a wrong number on a live page is worse than no number. */
-const ABC_PHONE = null;
-const ABC_EMAIL = null;
+/* Verified 2026-07-30 against ABC's own live site (tryabcenvironmental.com) — not copied from an
+   internal document. These are only ever used by the no-back-end fallback: when a lead cannot be
+   POSTed anywhere, the visitor is told so and given a real way to reach the company instead of a
+   silent failure. A wrong number here is worse than a null, so leave them null if they change. */
+const ABC_PHONE = '(929) 581-3300';
+const ABC_EMAIL = 'info@abcenv.com';
 
 /* ------------------------------------------------------------------ where the forms POST
  * The two panels under a result — "watch this building" and "what do you want cleared" — need a
@@ -224,22 +323,9 @@ const ABC_EMAIL = null;
  * and phone number to a stranger, and the page would look completely normal while doing it. An
  * attacker who can set the iframe src can already do plenty, but harvesting THROUGH our own form
  * is not something we hand them. */
-const ABC_API_BASE = (function(){
-  if (typeof location === 'undefined') return null;
-  try {
-    var given = new URLSearchParams(location.search).get('api');
-    if (given) {
-      var u = new URL(given, location.href);
-      if (u.origin !== location.origin) return null;      // refuse, do not "fix"
-      return u.href.replace(/\/*$/, '/');
-    }
-  } catch (e) {}
-  try {
-    var m = String(location.pathname || '').match(/^(.*?)\/wp-content\/(?:plugins|mu-plugins)\//);
-    if (m) return location.origin + (m[1] || '') + '/wp-json/abc-vl/v1/';
-  } catch (e) {}
-  return null;
-})();
+/* DEMO BUILD — see build.py. The real derivation is replaced so the monitoring panel,
+   which only renders for the WordPress plugin, is visible on a static test link. */
+const ABC_API_BASE = 'https://abc-demo.invalid/api/';
 
 // Socrata app token for MODE A. Verified working 2026-07-28 (HTTP 200 against wvxf-dwi5).
 //
@@ -260,13 +346,13 @@ const NYC_APP_TOKEN = 'QKyEzqUmzgFFb1fNFZS0ugiop';
 const RULES = {
   lead: {
     label: 'Lead-based paint', weFix: true,
-    blurb: 'ABC Environmental holds the lead abatement licence. This is our core work.',
+    blurb: 'Lead abatement is ABC Environmental’s core work — containment, removal, dust-wipe clearance and the certification filing.',
     pure: ['555','610','611','612','614','616','617','618','619','620','621','622','623','624','625','626'],
     never: ['556','557','558','559','560','856','857']
   },
   mold: {
     label: 'Mold', weFix: true,
-    blurb: 'ABC Environmental remediates mold, including the licensed assessor and remediator roles.',
+    blurb: 'ABC Environmental carries out mold remediation, with both roles Article 32 requires — assessment and remediation — plus the clearance paperwork.',
     /* 510 is 27-2005 "abate the nuisance", NOT carpentry — it had been sitting in `never`
        under a carpentry note that does not apply to it, hiding ~517 genuine open mold
        violations (530 rows say MOLD; 13 of those really say MOLDING). */
@@ -1067,7 +1153,12 @@ async function lookup(raw,pre){
      total — and it was being printed as a bare fact directly under the "get a free quote" CTA.
      netlify/lookup.js has always computed this; the widget dropped it, so the two surfaces
      disagreed about how confident to sound about the same number. */
-  const mixedTruncated=Object.keys(mixedByCat).length>0 && rows.length<exactOpen;
+  /* `atLeast` was structurally OFF in exactly the state where every figure is a floor. When the
+     grouped query fails, countsOk is false and exactOpen is 0 — so `rows.length < exactOpen` is
+     `n < 0`, always false, and nothing was ever marked as a floor. But in that same state every
+     number in mergedByCat came off the CAPPED detail list. So the one path where the counts are
+     least trustworthy was the one path that presented them as exact totals. */
+  const mixedTruncated=Object.keys(mixedByCat).length>0 && (!countsOk || rows.length<exactOpen);
   const abcWork={};
   for(const [k,spec] of Object.entries(RULES))
     if(spec.weFix&&mergedByCat[k])
@@ -1132,26 +1223,84 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"'`]/g,c=>(
  * NO PRICES HERE, EVER. Not a number, not a range, not "starting at". A price on an automated page
  * about a building nobody has visited is a quote we would have to honour.
  * ============================================================================================== */
+/* `group` sorts a row under a heading in the quote panel. The ORDER of GROUP_ORDER is the order
+   the headings appear; a row whose group is missing from that list would never render, so the
+   parity test asserts every service's group is a member. */
+const GROUP_ORDER = [
+  ['test',    'Testing & inspection'],
+  ['work',    'The work itself'],
+  ['restore', 'Restoration & site work'],
+  ['paper',   'The paperwork, A to Z'],
+  ['open',    'Not sure yet'],
+];
+
 const SERVICES = [
-  { key:'lead', match:'lead', name:'Lead-based paint',
+  /* ---- the three the classifier can actually count on a building --------------------------- */
+  { key:'lead', match:'lead', group:'work', name:'Lead-based paint',
     we_do:'Abatement, containment and dust-wipe clearance — and we file the certification with HPD when the work is done.',
     why_now:'Lead carries the shortest clocks HPD sets, and an uncertified correction leaves the violation open on the record even after the work is finished.' },
-  { key:'mold', match:'mold', name:'Mold',
+  { key:'mold', match:'mold', group:'work', name:'Mold',
     we_do:'Both licensed roles Article 32 requires — the assessor and the remediator — plus the clearance paperwork.',
     why_now:'Missing the assessment is the usual reason a mold job fails at closeout, and re-inspection means paying for the work twice.' },
-  { key:'remediation', match:'remediation', name:'Cleaning / disinfection',
+  { key:'remediation', match:'remediation', group:'work', name:'Cleaning / disinfection',
     we_do:'We carry out the remediation and document it for the file.',
     why_now:'These sit open on the record until the correction is certified.' },
-  { key:'asbestos', match:null, name:'Asbestos',
+
+  /* ---- testing & inspection ---------------------------------------------------------------- */
+  { key:'xrf', match:null, group:'test', name:'XRF lead testing',
+    we_do:'A hand-held XRF reads lead straight through the paint layers, apartment by apartment, and nothing goes to a lab — you get the reading on the visit.',
+    why_now:'Paint in a pre-1960 building is presumed to be lead until somebody tests it, and a test is what turns a presumption into a fact you can act on.' },
+  { key:'dustwipe', match:null, group:'test', name:'Dust-wipe clearance testing',
+    we_do:'The wipe samples that prove a lead job is actually finished, taken and reported to the standard the clearance requires.',
+    why_now:'A lead correction is not finished when the work stops — it is finished when it clears, and an uncleared job stays open on the record.' },
+  { key:'watertest', match:null, group:'test', name:'Water testing',
+    we_do:'Drinking-water sampling for lead and the other contaminants a tenant complaint or a City order asks about.',
+    why_now:'Water is the one exposure route people assume is somebody else’s problem, and it is the one a tenant complaint names first.' },
+  { key:'coring', match:null, group:'test', name:'Coring / core sampling',
+    we_do:'We take a cylindrical core out of the assembly and read every layer of it, so what is actually inside a wall, roof or slab is a measurement rather than a guess.',
+    why_now:'Guessing what is in the build-up is how a renovation finds asbestos halfway through and stops.' },
+
+  /* ---- the physical work ------------------------------------------------------------------- */
+  { key:'asbestos', match:null, group:'work', name:'Asbestos',
     we_do:'Licensed asbestos work — survey, abatement and air monitoring through the licensed roles the job requires.',
     why_now:'Asbestos is found during demolition and renovation, and finding it mid-job stops the job.' },
-  { key:'repairs', match:null, name:'The repairs behind the violations',
+  { key:'repairs', match:null, group:'work', name:'The repairs behind the violations',
     we_do:'General construction — the plaster, paint, windows, doors and carpentry an inspector wrote up.',
     why_now:'Most violations are ordinary repair work that has never been done, and they keep accruing penalties until it is.' },
-  { key:'certify', match:null, name:'Certifying corrections with HPD',
+
+  /* ---- restoration & site work ------------------------------------------------------------- */
+  { key:'waterdamage', match:null, group:'restore', name:'Water-damage restoration',
+    we_do:'Extraction, structural drying and the rebuild after a leak, a burst line or a flood.',
+    why_now:'Wet material that is not dried properly is a mold violation in a few weeks — the same building, a worse problem, on a shorter clock.' },
+  { key:'firedamage', match:null, group:'restore', name:'Fire-damage restoration',
+    we_do:'Smoke, soot and odour removal and the rebuild back to pre-fire condition.',
+    why_now:'Fire damage brings inspectors, and what they write up afterwards is usually more than the fire itself.' },
+  { key:'demolition', match:null, group:'restore', name:'Demolition',
+    we_do:'Interior strip-outs through to full structural demolition — with the lead and asbestos work that has to happen before a wall comes down.',
+    why_now:'Demolition without the survey first is how a site gets shut down after the work has already started.' },
+  { key:'fueltank', match:null, group:'restore', name:'Fuel-tank cleaning & maintenance',
+    we_do:'Cleaning and maintenance of the building’s fuel tank and lines.',
+    why_now:'A neglected tank is a heat failure in January, and heat failures are their own violation class.' },
+  { key:'maintenance', match:null, group:'restore', name:'Property maintenance',
+    we_do:'Ongoing upkeep on the building so the same write-ups stop coming back every year.',
+    why_now:'The cheapest violation is the one that never gets written, and most of them are maintenance nobody scheduled.' },
+
+  /* ---- paperwork --------------------------------------------------------------------------- */
+  { key:'certify', match:null, group:'paper', name:'Certifying corrections with HPD',
     we_do:'We file the certification, on the City’s own forms, for work that is already finished.',
     why_now:'Work that is done but never certified still reads as an OPEN violation on the building record.' },
-  { key:'survey', match:null, name:'I do not know what I need — look at the building',
+  { key:'dohlead', match:null, group:'paper', name:'DOH lead orders',
+    we_do:'A Department of Health lead order is a separate track from HPD, with its own forms and its own clocks. We work that track from the order through to the closeout.',
+    why_now:'A DOH order runs on a shorter clock than the HPD violation people are usually watching, and answering the wrong one first is the common mistake.' },
+  { key:'dohasbestos', match:null, group:'paper', name:'DOH asbestos orders',
+    we_do:'The asbestos-order track — the filings, the licensed work, the air monitoring and the paperwork that closes it out.',
+    why_now:'Asbestos orders are the ones where an incomplete file, not incomplete work, is what keeps the violation open.' },
+  { key:'paperwork', match:null, group:'paper', name:'The paperwork, A to Z',
+    we_do:'Every filing a job needs from the first notification to the final clearance report and the closeout certification — done for you, start to finish.',
+    why_now:'Nearly every violation that is still open on a building where the work was actually done is open because one form never went in.' },
+
+  /* ---- the catch-all ----------------------------------------------------------------------- */
+  { key:'survey', match:null, group:'open', name:'I do not know what I need — look at the building',
     we_do:'We read the violation record with you and tell you what actually has to happen, in what order.',
     why_now:'' }
 ];
@@ -1190,13 +1339,64 @@ function askPanels(r){
      answered and another did not is putting words in their mouth about their own building. */
   const trustCounts = s.complete !== false;
 
-  const rows=[], extra=[];
+  /* THE ACTUAL VIOLATIONS, NAMED. A ticked row used to say "Lead-based paint — 91 found" and
+     nothing else, which asks somebody to take a number on faith about their own building. These
+     are the City's own records for that category.
+
+     THE TRAP, and why this is not just a filter: `r.violations` is the DETAIL list and it is
+     CAPPED (summary.violationsTruncated) — on a 5,222-violation building it is roughly 9% of the
+     data. `info.count` comes from the GROUPED query and is the real figure. So the two disagree,
+     by design, and printing a sample as though it were the set is exactly the lie this file
+     spends 40 comment-lines elsewhere refusing to tell. The row therefore names what it can SEE
+     and states plainly how many it cannot. When the count itself is only a floor (`atLeast`,
+     from the capped mixed-order pass) the remainder is said as "at least", never as a total. */
+  const byCat={};
+  for(const v of (r.violations||[])) (byCat[v.category]=byCat[v.category]||[]).push(v);
+  const DETAIL_MAX=6, DESC_MAX=190;
+
+  function detailFor(svc, info){
+    if(!svc.match) return '';
+    const list=byCat[svc.match]||[];
+    /* A COUNT WITH NOTHING UNDER IT HAS TO SAY WHY.
+       The detail query is capped and ordered by inspection date, so a building whose lead
+       violations are all older than that window shows "Lead-based paint — 91 found" and, without
+       this branch, absolutely nothing beneath it. That reads as either a bug or a lie, and it is
+       neither: the count is exact and the records are simply outside the sample this page pulled.
+       Say that, rather than rendering a confident number over silence. */
+    if(!list.length){
+      return info && info.count
+        ? `<p class="vmore">The City's count for this category is ${info.count}${info.atLeast?'+':''}.
+           These particular records fall outside the most recent ones this page loads, so they are
+           not listed above — we pull the full set when we scope the job.</p>`
+        : '';
+    }
+    const show=list.slice(0,DETAIL_MAX);
+    const items=show.map(v=>{
+      const d=(v.description||'').trim();
+      return `<li class="vit">
+        <span class="cls ${esc(v.class||'A')}" title="${esc(CLASS_MEANING[v.class]||'')}">${esc(v.class||'?')}</span>
+        <span class="vtx"><b>${v.apartment?('Apt '+esc(v.apartment)):'Building-wide'}</b>${
+          esc(d.slice(0,DESC_MAX))}${d.length>DESC_MAX?'…':''}${
+          v.correctBy?`<i class="vby">City's correct-by date: ${esc(v.correctBy)}</i>`:''}</span>
+      </li>`;
+    }).join('');
+    /* The remainder is measured against the authoritative count when we have one, and against
+       the visible list when we do not. Never a negative, never an invented total. */
+    const total=info&&info.count ? info.count : list.length;
+    const more=Math.max(0, total-show.length);
+    const floor=!!(info&&info.atLeast);
+    return `<ul class="vlist">${items}</ul>${
+      more?`<p class="vmore">…and ${floor?'at least ':''}${more} more on this building.</p>`
+         :''}`;
+  }
+
+  const rows=[], extraByGroup={};
   for(const svc of SERVICES){
     const info = (trustCounts && svc.match) ? work[svc.match] : null;
     const n = info ? info.count : 0;
     const on = n > 0;
     const badge = n > 0
-      ? `<span class="ct">${info.atLeast?'':''}${n}${info.atLeast?'+':''} found</span>`
+      ? `<span class="ct">${n}${info.atLeast?'+':''} found</span>`
       : `<span class="ct none">${svc.match?'none found':'ask us'}</span>`;
     const html=`<label class="pick${on?' on':''}">
         <span class="top">
@@ -1205,30 +1405,61 @@ function askPanels(r){
         </span>
         <span class="we">${esc(svc.we_do)}</span>
         ${svc.why_now?`<span class="wn">${esc(svc.why_now)}</span>`:''}
+        ${on?detailFor(svc,info):''}
       </label>`;
-    (on?rows:extra).push(html);
+    if(on) rows.push(html);
+    else (extraByGroup[svc.group]=extraByGroup[svc.group]||[]).push(html);
   }
+
+  /* Everything we were not able to pre-tick, under its own heading. Sixteen unticked boxes in one
+     undifferentiated column is a wall nobody reads; the headings are what make it a menu. A
+     service whose `group` is not in GROUP_ORDER would silently never render, which is why the
+     parity test asserts group membership rather than trusting this loop. */
+  const extraHtml = GROUP_ORDER.map(([g,label])=>{
+    const list=extraByGroup[g];
+    return (list&&list.length) ? `<div class="subhead sub2">${esc(label)}</div>${list.join('')}` : '';
+  }).join('');
+  const extraCount = Object.values(extraByGroup).reduce((a,l)=>a+l.length,0);
 
   const found=rows.length;
   let h='';
 
   /* ---- panel 1: watch it ------------------------------------------------------------------ */
   if(ABC_API_BASE){
-    h+=`<div class="panel" id="watchpanel">
-      <h3>Want us to watch this building?</h3>
-      <p class="lede">The City records new violations against <b>${esc(addr)}</b> without telling
-        anyone. We check every day and email you when a new lead or mold violation lands — with the
-        apartment, the class and the date it has to be corrected by. Nothing else, and you can stop
-        with one click in any email.</p>
+    /* THE MONITORING PITCH.
+       Every claim here is one this system can actually keep, and that constraint is the reason
+       the copy is shaped the way it is. We DO sweep daily and we DO have the apartment, class and
+       correct-by date. We do NOT say what a penalty costs (no price, ever), we do NOT compute a
+       deadline the City did not set, and the "whole portfolio" option does not pretend the
+       back-end enrolled buildings nobody has told it about — it enrols THIS one for real and says
+       plainly that the rest are added by reply. A signup box that silently watches one building
+       while the customer believes it is watching twelve is the worst bug this product could have,
+       because nothing ever surfaces it: the alerts that never arrive look exactly like quiet. */
+    h+=`<div class="panel watch" id="watchpanel">
+      <h3>We will tell you the day it lands.</h3>
+      <p class="lede">Nobody calls you when the City writes up <b>${esc(addr)}</b>. It appears in a
+        public dataset, the correct-by clock is already running from the inspection date, and the
+        first most owners hear of it is a penalty or a tenant. We read that dataset every day.</p>
+      <ul class="wbul">
+        <li><b>The day it lands</b> — the apartment, the class, and the City's own correct-by date.</li>
+        <li><b>Lead and mold first</b> — the two with the shortest clocks and the work we do.</li>
+        <li><b>Nothing else, ever.</b> No newsletter. One click in any email stops it for good.</li>
+      </ul>
       <form id="watchf" novalidate>
+        <div class="scope" role="radiogroup" aria-label="What should we watch">
+          <label class="opt on"><input type="radio" name="wscope" value="one" checked>
+            <span><b>Just this building</b>${esc(addr)}</span></label>
+          <label class="opt"><input type="radio" name="wscope" value="all">
+            <span><b>My whole portfolio</b>Every building you own or manage, one email each time.</span></label>
+        </div>
         <div class="rowfields">
           <input type="email" id="wemail" placeholder="you@example.com"
                  aria-label="Your email address" autocomplete="email" required>
-          <button type="submit" id="wgo">Watch this building</button>
+          <button type="submit" id="wgo">Start watching — free</button>
         </div>
         <label class="sr">Leave this empty<input type="text" id="whp" tabindex="-1" autocomplete="off"></label>
-        <p class="fine">Free for up to five buildings. We send you a confirmation link first —
-          nothing starts until you click it.</p>
+        <p class="fine">Free for up to five buildings. We send a confirmation link first — nothing
+          starts until you click it, and we never pass your address to anyone.</p>
         <div id="wsaid" style="margin-top:12px"></div>
       </form>
     </div>`;
@@ -1238,29 +1469,40 @@ function askPanels(r){
   h+=`<div class="panel lead" id="quotepanel">
     <h3>${found?'Which of these do you want cleared?':'What can we take off your hands?'}</h3>
     <p class="lede">${found
-      ? `We found work on this building that we are licensed to do. Tick what you want priced and
-         we will come back with a scope — what has to happen, in what order, and what it costs.`
+      /* NOT "work we are licensed to do". Per BH's own records the licensed lead-abatement and
+         mold assessor/remediator roles are performed by third-party firms under ABC, so a licence
+         claim on a public page is a regulatory statement this file cannot stand behind. Say what
+         the company DOES — the same rule monitor/email.js applies to the alert copy. */
+      ? `We found work on this building that we do. Tick what you want scoped and we will send you
+         a written proposal — what has to happen, in what order, who has to sign what, and the price.`
       : `Nothing on this building is work we would be doing today. Tell us what you need anyway —
          plenty of what we get called for was never written up as a violation.`}</p>
     ${s.complete===false?`<p class="lede"><b>We could not read every City record just now</b>, so
       nothing below is pre-ticked — tick what you know you need.</p>`:''}
     <form id="quotef" novalidate>
       ${rows.length?`<div class="subhead">Found on this building</div>${rows.join('')}`:''}
-      ${extra.length?`<div class="subhead">${rows.length?'Also ask us about':'What we do'}</div>${extra.join('')}`:''}
+      ${extraCount?`<div class="subhead sub1">${rows.length?'Also ask us about — everything else we do':'What we do'}</div>${extraHtml}`:''}
 
-      <div class="subhead" style="margin-top:18px">Where do we send it?</div>
-      <div class="rowfields">
-        <input type="text"  id="qname"  placeholder="Your name"  aria-label="Your name" autocomplete="name" required>
-        <input type="email" id="qemail" placeholder="Email"      aria-label="Your email address" autocomplete="email" required>
-        <input type="tel"   id="qphone" placeholder="Phone (optional)" aria-label="Your phone number" autocomplete="tel">
+      <div class="closer">
+        <div class="subhead" style="margin-top:0">Where do we send the proposal?</div>
+        <ul class="promise">
+          <li>A written scope for exactly what you ticked — not a phone estimate.</li>
+          <li>Back to you within one business day.</li>
+          <li>No charge, and no obligation to use us.</li>
+        </ul>
+        <div class="rowfields">
+          <input type="text"  id="qname"  placeholder="Your name"  aria-label="Your name" autocomplete="name" required>
+          <input type="email" id="qemail" placeholder="Email"      aria-label="Your email address" autocomplete="email" required>
+          <input type="tel"   id="qphone" placeholder="Phone (optional)" aria-label="Your phone number" autocomplete="tel">
+        </div>
+        <textarea id="qnote" aria-label="Anything we should know"
+          placeholder="Anything we should know — access, tenants, a deadline you are up against, a hearing date…"></textarea>
+        <label class="sr">Leave this empty<input type="text" id="qhp" tabindex="-1" autocomplete="off"></label>
+        <button type="submit" id="qgo">Send me the proposal</button>
+        <p class="fine">We price a job after we have looked at the actual violations — a number
+          produced by a web page about a building nobody has visited is not a number we would
+          stand behind, so you will get a real proposal rather than an instant quote.</p>
       </div>
-      <textarea id="qnote" aria-label="Anything we should know"
-        placeholder="Anything we should know — access, tenants, a deadline you are up against, a hearing date…"></textarea>
-      <label class="sr">Leave this empty<input type="text" id="qhp" tabindex="-1" autocomplete="off"></label>
-      <button type="submit" id="qgo">Send this to us</button>
-      <p class="fine">No price is quoted automatically and nothing is charged for the quote. We
-        look at the actual violations first — a number produced by a web page about a building
-        nobody has visited is not a number we would stand behind.</p>
       <div id="qsaid" style="margin-top:12px"></div>
     </form>
   </div>`;
@@ -1275,6 +1517,15 @@ function wireAsk(){
      onto the row so the choice is visible without hunting for a small box. */
   document.querySelectorAll('#quotepanel .pick input').forEach(cb=>{
     cb.addEventListener('change',()=>cb.closest('.pick').classList.toggle('on',cb.checked));
+  });
+
+  /* Same mirror for the watch scope. Radios are exclusive, so every sibling has to be cleared —
+     toggling only the clicked one leaves two options both looking selected. */
+  document.querySelectorAll('#watchpanel .scope input').forEach(rb=>{
+    rb.addEventListener('change',()=>{
+      document.querySelectorAll('#watchpanel .opt').forEach(o=>
+        o.classList.toggle('on', o.contains(rb) && rb.checked));
+    });
   });
 
   const wf=el('watchf');
@@ -1298,6 +1549,19 @@ function wireAsk(){
          try to be more specific than it was. */
       said.innerHTML=`<div class="said"><b>${res && res.ok===false?'Check that address':'Check your email'}</b>${
         esc((res&&res.message)||'If that address is valid you will get a confirmation link in a minute.')}</div>`;
+
+      /* THE PORTFOLIO OPTION, KEPT HONEST. The `watch` route takes ONE bbl — the one on screen —
+         and there is no route that can enrol buildings nobody has named. So the extra addresses
+         are collected by a human reply, and that is said out loud here rather than being implied
+         away by a tick-box. Silently enrolling one building while somebody believes twelve are
+         being watched fails invisibly: the alerts that never arrive look exactly like good news. */
+      const scope=document.querySelector('#watchpanel .scope input:checked');
+      if(scope && scope.value==='all' && !(res && res.ok===false)){
+        said.insertAdjacentHTML('beforeend',
+          `<div class="said more"><b>Your other buildings</b>This one is being set up now. Reply to
+           the confirmation email with the other addresses and we will add them to the same watch —
+           we do not have their addresses yet, so nothing is watching them until you send them.</div>`);
+      }
       if(!res || res.ok!==false) wf.querySelector('.rowfields').style.display='none';
     }catch(err){
       said.innerHTML=`<div class="said bad"><b>That did not send</b>Nothing has been set up. Please
@@ -1541,21 +1805,45 @@ function render(r,raw){
     const shown=r.violations.length;
     h+=`<h3 style="margin:22px 0 0;font-size:1rem">${
       s.violationsTruncated ? `Showing the ${shown} most recent of ${s.hpdOpen} open violations`
-                            : `All ${shown} open violations`}</h3>
-      <div class="scroll"><table><thead><tr>
-        <th>Class</th><th>Apt</th><th>Violation</th><th>Inspected</th><th>Correct by</th>
-      </tr></thead><tbody>`;
-    for(const v of r.violations){
-      h+=`<tr>
-        <td><span class="cls ${esc(v.class||'A')}" title="${esc(CLASS_MEANING[v.class]||'')}">${esc(v.class||'?')}</span></td>
-        <td>${esc(v.apartment||'—')}</td>
-        <td class="d">${esc((v.description||'').slice(0,300))}${
-          v.weFix?`<span class="tag">${esc(v.categoryLabel||v.category)} — we fix these</span>`:''}</td>
-        <td class="muted">${esc(v.inspected||'—')}</td>
-        <td class="muted">${esc(v.correctBy||'—')}</td>
-      </tr>`;
+                            : `All ${shown} open violations`}</h3>`;
+
+    /* CARDS, NOT ROWS, AND OUR WORK FIRST.
+       A five-column table of 300-character inspector prose is unreadable on a phone and it buries
+       the two categories this company is actually here to clear. Split on `weFix` — the flag the
+       classifier already set per violation, so this render agrees with the counts above by
+       construction instead of re-deciding with its own regex, which is how the two surfaces would
+       start disagreeing about the same building. Order within each section is preserved (the
+       backend already sorted most-recent-first); only the grouping changes. */
+    const card=v=>`<article class="vcard${v.weFix?' fix':''}">
+        <header>
+          <span class="cls ${esc(v.class||'A')}" title="${esc(CLASS_MEANING[v.class]||'')}">${esc(v.class||'?')}</span>
+          <span class="vapt">${v.apartment?('Apt '+esc(v.apartment)):'Building-wide'}</span>
+          ${v.weFix?`<span class="tag">${esc(v.categoryLabel||v.category)} — we clear these</span>`:''}
+        </header>
+        <p class="vdesc">${esc((v.description||'').slice(0,300))}${
+          (v.description||'').length>300?'…':''}</p>
+        <footer>
+          <span>Inspected <b>${esc(v.inspected||'—')}</b></span>
+          <span>Correct by <b>${esc(v.correctBy||'not set')}</b></span>
+        </footer>
+      </article>`;
+
+    const mine=r.violations.filter(v=>v.weFix), theirs=r.violations.filter(v=>!v.weFix);
+    if(mine.length){
+      h+=`<div class="vsec brand"><span>Lead, mold &amp; remediation — what we clear</span></div>
+          <div class="vgrid">${mine.map(card).join('')}</div>`;
     }
-    h+=`</tbody></table></div>`;
+    if(theirs.length){
+      /* The two halves have to name the SAME split or the page argues with itself. `weFix` is set
+         from RULES, and the only categories carrying it are lead, mold and cleaning/disinfection —
+         asbestos is real work with no HPD order number, so it can never land in the top section
+         and must not be named as the reason something is in the bottom one. */
+      h+=`<div class="vsec"><span>Also on this building</span>
+            <i>${mine.length?'Outside the lead, mold and cleaning work above — listed so you have the whole picture.'
+                            :'None of these are lead or mold. Listed so you have the whole picture.'}</i>
+          </div>
+          <div class="vgrid">${theirs.map(card).join('')}</div>`;
+    }
   } else {
     /* "No violations" is only sayable when every source ANSWERED. A single dataset outage used
        to render this same green all-clear - on a NYCHA building with 51 violations in the
@@ -1773,58 +2061,61 @@ document.getElementById('f').addEventListener('submit',async e=>{
   setInterval(report, 400);
 })();
 </script>
-</body>
-</html>
-
-<style id="abcBrand">
-/* ABC Environmental brand skin — matched to tryabcenvironmental.com:
-   green #5db33b buttons (white text), white page, Open Sans headings, sharp ~3px corners. */
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&display=swap');
-:root{ color-scheme:light; --brand:#5db33b; --fix:#5db33b; --brand-ink:#ffffff; --radius:4px; }
-/* ABC's site is always light — force the widget light too so it never flips to dark on a dark-mode phone. */
-@media (prefers-color-scheme: dark){
-  :root{ color-scheme:light;
-    --bg:#ffffff; --surface:#f7f8f9; --line:#e2e5e9; --ink:#14181d; --ink-soft:#5b646e;
-    --crit:#b4232a; --warn:#a8620d; --calm:#6b7480; --brand:#5db33b; --fix:#5db33b; --brand-ink:#ffffff; }
-}
-h1,h2,h3,.panel h3{ font-family:"Open Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+<style id="abcDemoRibbon">
+/* The ONLY styling this file still carries. ABC's green, Open Sans, the light-lock and the whole
+   look now live in abc-handoff/widget.html, so the plugin ABC installs is already on-brand and
+   this page cannot look better than the real thing. What is left is the demo notice. */
+.abc-demo{background:#14181d;color:#fff;font:600 13px/1.4 "Open Sans",-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  padding:9px 16px;display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;justify-content:center;text-align:center}
+.abc-demo b{color:#5db33b;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px}
+.abc-demo span{opacity:.82;font-weight:400}
 </style>
 <script>
-/* DEMO copy of the ABC lookup:
-   (1) the static test link has no back-end, so the plugin's "Watch this building" panel is injected;
-   (2) Lead + Mold are flagged at the TOP of the results (VA request);
-   (3) reskinned to ABC's site green (#5db33b) via the <style> above. */
+/* ============================================================================================
+ * ABC DEMO SHIM — generated into index.html by build.py. Not part of the product.
+ *
+ * A static GitHub Pages URL has no back-end, so the two forms have nowhere to POST. Without this
+ * the widget takes its honest "this page is not connected to our office" path — correct, but it
+ * shows somebody evaluating the product an error instead of the product.
+ *
+ * So the two API calls are answered here, locally, with the SAME text the live server returns.
+ * Nothing is sent anywhere and nothing is stored; the notice at the top of the page says so, and
+ * each reply says so again, because a signup box that looks like it worked and did nothing is the
+ * single most damaging thing a demo can do.
+ * ============================================================================================ */
 (function(){
-  function injWatch(){
-    var qp=document.getElementById('quotepanel');
-    if(!qp||document.getElementById('watchpanel'))return;
-    var a=((document.getElementById('q')||{}).value)||'this building';
-    var d=document.createElement('div');d.className='panel';d.id='watchpanel';
-    d.innerHTML='<h3>Want us to watch this building?</h3>'+
-      '<p class="lede">The City records new violations against <b>'+a+'</b> without telling anyone. We check every day and email you when a new lead or mold violation lands — with the apartment, the class and the date it has to be corrected by. Nothing else, and you can stop with one click in any email.</p>'+
-      '<form id="dwf" novalidate><div class="rowfields">'+
-      '<input type="email" placeholder="you@example.com" aria-label="Your email">'+
-      '<button type="submit">Watch this building</button></div>'+
-      '<p class="fine">Free for up to five buildings. We send you a confirmation link first — nothing starts until you click it.</p>'+
-      '<div id="dws" style="margin-top:12px"></div></form>';
-    qp.parentNode.insertBefore(d,qp);
-    d.querySelector('#dwf').addEventListener('submit',function(e){e.preventDefault();document.getElementById('dws').innerHTML='<span style="color:var(--brand)">✓ On the live site this signs you up — you\'d get a confirmation email to click first.</span>';});
+  var BASE = 'https://abc-demo.invalid/api/';
+
+  var real = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    if(url.indexOf(BASE) !== 0) return real(input, init);   // live City data still goes out for real
+
+    var path = url.slice(BASE.length).replace(/^\/+/, '');
+    var msg  = (path.indexOf('watch') === 0)
+      ? 'If that address is valid you will get a confirmation link in a minute. ' +
+        '(Demonstration page — nothing was sent and no address was stored.)'
+      : 'Thank you — we have your request and we will come back to you with a proposal. ' +
+        '(Demonstration page — nothing was sent and no details were stored.)';
+
+    return Promise.resolve(new Response(
+      JSON.stringify({ ok:true, message:msg }),
+      { status:200, headers:{ 'Content-Type':'application/json' } }
+    ));
+  };
+
+  function ribbon(){
+    if(document.querySelector('.abc-demo')) return;
+    var d=document.createElement('div');
+    d.className='abc-demo';
+    d.innerHTML='<b>Demonstration</b><span>Building data below is live from New York City. '+
+                'The two forms are switched off — nothing you type is sent or stored.</span>';
+    document.body.insertBefore(d, document.body.firstChild);
   }
-  function injTopFlags(){
-    var out=document.getElementById('out');
-    if(!out||document.getElementById('abcTopFlags'))return;
-    function cnt(rx){var els=out.querySelectorAll('*'),best=null,bl=1e9;for(var i=0;i<els.length;i++){var t=els[i].textContent||'';if(rx.test(t)&&/\d+\s*found/i.test(t)&&t.length<bl){best=els[i];bl=t.length;}}if(!best)return null;var m=best.textContent.match(/(\d+)\s*found/i);return m?m[1]:null;}
-    var lead=cnt(/lead-based paint/i), mold=cnt(/\bmold\b/i);
-    if(!lead&&!mold)return;
-    var s=document.createElement('div');s.id='abcTopFlags';
-    s.style.cssText='margin:14px 0;padding:14px 18px;border:1.5px solid var(--brand);border-radius:6px;background:rgba(93,179,59,.12);display:flex;gap:10px 18px;flex-wrap:wrap;align-items:center;font-size:15px';
-    var b=[];
-    if(lead)b.push('<span style="font-weight:800;color:var(--brand)">✓ Lead-based paint — '+lead+'</span>');
-    if(mold)b.push('<span style="font-weight:800;color:var(--brand)">✓ Mold — '+mold+'</span>');
-    s.innerHTML='<span style="font-weight:800">ABC can clear this building:</span>'+b.join('<span style="opacity:.45">·</span>');
-    var ref=out.firstChild?out.firstChild.nextSibling:null;
-    out.insertBefore(s,ref);
-  }
-  try{new MutationObserver(function(){injWatch();injTopFlags();}).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ribbon);
+  else ribbon();
 })();
 </script>
+
+</body>
+</html>

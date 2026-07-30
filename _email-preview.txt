@@ -1,0 +1,32 @@
+Hello,
+
+The City has just recorded 3 new violations at:
+
+    609 East 12 Street, Brooklyn
+
+2 lead and 1 mold — this is work we do.
+
+  • Class C — Apt 6F
+    § 27-2056.6 ADM CODE REPAIR ALL PEELING LEAD-BASED PAINT AND ANY UNDERLYING DEFECTIVE SUBSURFACE IN THE ENTIRE APARTMENT LOCATED AT APT 6F, 6th STORY, 4th APARTMENT FROM NORTH AT EAST
+
+  • Class C — Apt 3R
+    § 27-2056.6 ADM CODE PROPERLY REPAIR WITH SIMILAR MATERIAL THE BROKEN OR DEFECTIVE PLASTERED SURFACES AND PAINT IN A UNIFORM COLOR AT CEILING AND WALLS IN THE BATHROOM
+
+  • Class B — Apt 6F
+    § 27-2005 HMC: TRACE AND REPAIR THE SOURCE AND ABATE THE NUISANCE CONSISTING OF MOLD APPROX. 8 SQ FT IN THE KITCHEN LOCATED AT APT 6F, 6th STORY
+
+WHAT THIS MEANS
+An open violation does not close by itself. The work has to be done AND the correction has to be certified to HPD, or the violation stays on the building's record and civil penalties continue to accrue.
+
+Most serious so far: Class C — immediately hazardous — the shortest clock the City sets
+Earliest correct-by date: 2026-08-14
+
+WE CAN HANDLE THIS
+We do this work, and we file the certification with HPD when it is finished. Tell us which ones you want cleared and we will come back with a scope:
+
+    https://example.test/?address=609%2520East%252012%2520Street%252C%2520Brooklyn
+
+— Example Site
+
+You are getting this because you asked us to watch 609 East 12 Street, Brooklyn.
+Stop these emails: https://example.test/?abc_vl_unsub=demo-token
