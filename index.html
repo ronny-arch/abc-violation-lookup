@@ -1800,7 +1800,7 @@ document.getElementById('f').addEventListener('submit',async e=>{
   function injTopFlags(){
     var out=document.getElementById('out');
     if(!out||document.getElementById('abcTopFlags'))return;
-    function cnt(rx){var els=out.querySelectorAll('*');for(var i=0;i<els.length;i++){var t=els[i].textContent||'';if(rx.test(t)&&/\d+\s*found/i.test(t)&&els[i].children.length<6){var m=t.match(/(\d+)\s*found/i);if(m)return m[1];}}return null;}
+    function cnt(rx){var els=out.querySelectorAll('*'),best=null,bl=1e9;for(var i=0;i<els.length;i++){var t=els[i].textContent||'';if(rx.test(t)&&/\d+\s*found/i.test(t)&&t.length<bl){best=els[i];bl=t.length;}}if(!best)return null;var m=best.textContent.match(/(\d+)\s*found/i);return m?m[1]:null;}
     var lead=cnt(/lead-based paint/i), mold=cnt(/\bmold\b/i);
     if(!lead&&!mold)return;
     var s=document.createElement('div');s.id='abcTopFlags';
