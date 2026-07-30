@@ -1780,8 +1780,13 @@ document.getElementById('f').addEventListener('submit',async e=>{
 /* ABC Environmental brand skin — matched to tryabcenvironmental.com:
    green #5db33b buttons (white text), white page, Open Sans headings, sharp ~3px corners. */
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@600;700;800&display=swap');
-:root{ --brand:#5db33b; --fix:#5db33b; --brand-ink:#ffffff; --radius:4px; }
-@media (prefers-color-scheme: dark){ :root{ --brand:#5db33b; --fix:#5db33b; --brand-ink:#0a1207; } }
+:root{ color-scheme:light; --brand:#5db33b; --fix:#5db33b; --brand-ink:#ffffff; --radius:4px; }
+/* ABC's site is always light — force the widget light too so it never flips to dark on a dark-mode phone. */
+@media (prefers-color-scheme: dark){
+  :root{ color-scheme:light;
+    --bg:#ffffff; --surface:#f7f8f9; --line:#e2e5e9; --ink:#14181d; --ink-soft:#5b646e;
+    --crit:#b4232a; --warn:#a8620d; --calm:#6b7480; --brand:#5db33b; --fix:#5db33b; --brand-ink:#ffffff; }
+}
 h1,h2,h3,.panel h3{ font-family:"Open Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
 </style>
 <script>
