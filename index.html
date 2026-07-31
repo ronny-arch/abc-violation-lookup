@@ -322,7 +322,7 @@ ul.cands button{background:none;border:0;color:var(--brand);text-decoration:unde
              aria-autocomplete="list" aria-controls="ac">
       <div class="ac" id="ac" hidden><ul role="listbox" aria-label="Address suggestions"></ul></div>
     </div>
-    <button id="go" type="submit">Check building</button>
+    <button id="go" type="submit">Check building violations</button>
   </form>
 
   <div id="out" aria-live="polite"></div>
@@ -1994,8 +1994,21 @@ function render(r,raw){
        an owner is actually exposed on. Sorts a COPY; r.violations order is left alone because
        the quote panel's per-category lists read from it. */
     const _recent=(a,b)=>String(b.inspected||'').localeCompare(String(a.inspected||''));
-    const mine=r.violations.filter(v=>v.weFix).sort(_recent),
-          theirs=r.violations.filter(v=>!v.weFix).sort(_recent);
+    /* SEVERITY FIRST, then recency. Newest-first alone put a Class A from last month above a
+       Class C from two years ago, and those are not comparable: Class C is HPD's
+       "immediately hazardous" band — the shortest statutory clock, and the one where HPD can do
+       the work itself under the Emergency Repair Program and bill the owner. An owner scanning
+       this page needs to see the thing that can cost them the most, first. Class ranks C > B > A,
+       anything unclassified sorts last; ties fall back to newest. Applied to BOTH sections so the
+       page never argues with itself about what "important" means. */
+    const _rank=v=>({C:0,B:1,A:2}[String(v.class||v.violationclass||'').trim().toUpperCase()]??3);
+    const _worst=(a,b)=>(_rank(a)-_rank(b))||_recent(a,b);
+    /* Inside the top section, lead leads. It is the largest job, it carries Local Law 1 of 2004's
+       annual duty, and it is what ABC is hired for most often; mold, then the cleaning work. */
+    const _catRank=v=>({lead:0,mold:1,remediation:2}[v.category]??3);
+    const _mineOrder=(a,b)=>(_rank(a)-_rank(b))||(_catRank(a)-_catRank(b))||_recent(a,b);
+    const mine=r.violations.filter(v=>v.weFix).sort(_mineOrder),
+          theirs=r.violations.filter(v=>!v.weFix).sort(_worst);
     if(mine.length){
       h+=`<div class="vsec brand"><span>Lead, mold &amp; remediation — what we clear</span></div>
           <div class="vgrid">${mine.map(card).join('')}</div>`;
@@ -2217,7 +2230,7 @@ document.getElementById('f').addEventListener('submit',async e=>{
       <p class="meta">This is not a result for your building. NYC Open Data is slow or down right
       now — please try again in a moment.</p></div>`;
     console.error(err);
-  }finally{ if(seq===subSeq){ btn.disabled=false; btn.textContent='Check building'; } }
+  }finally{ if(seq===subSeq){ btn.disabled=false; btn.textContent='Check building violations'; } }
 });
 
 /* ==============================================================================================
